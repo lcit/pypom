@@ -2,7 +2,13 @@ import cv2
 import numpy as np
 import os
 import argparse
-import utils
+import sys
+import inspect
+
+this_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parent_dir = os.path.dirname(this_dir)
+sys.path.append(parent_dir)
+from pypom import utils
 
 __author__ = "Leonardo Citraro"
 __email__ = "leonardo.citraro@epfl.ch"
@@ -20,7 +26,7 @@ def main(input_folder="",
     
     utils.mkdir(output_folder)
     
-    K, dist = utils.retrieve_intrinsics_from_json(intrinsics_json)
+    K, dist, _ = utils.retrieve_intrinsics_from_json(intrinsics_json)
     K = utils.scale_homography(K, 1.0/downsampling)
 
 

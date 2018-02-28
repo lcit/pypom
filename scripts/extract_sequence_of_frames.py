@@ -2,17 +2,20 @@
 import cv2
 import argparse
 import os
+import sys
+import inspect
 
-def mkdir(directory):
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+this_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parent_dir = os.path.dirname(this_dir)
+sys.path.append(parent_dir)
+from pypom import utils
 
 def main(filename="example.avi",
          start=0,
          stop=1,
          step=1,
          out=None,
-		 downsampling=1):
+         downsampling=1):
     """ Extraction of a sequence of frame from a video file.
 
     This script require Opencv with FFmpeg support.
@@ -46,7 +49,7 @@ def main(filename="example.avi",
     print("Input file: {}".format(filename))
     print("Ouput folder: {}".format(out))
     
-    mkdir(os.path.dirname(out))
+    utils.mkdir(os.path.dirname(out))
     
     cap = cv2.VideoCapture()    
     ret = cap.open(filename)
@@ -56,22 +59,26 @@ def main(filename="example.avi",
         while(cap.isOpened()):
 
             ret, frame = cap.read()
-        
             frame_number = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+
+            if not ret:
+                print("!!Unable to read frame {}".format(frame_number))
+                continue
+            
             if frame_number >= stop:
                 print("Exit at frame {}".format(frame_number))
                 break
             
             if frame_number >= start and frame_number%step==0: 
                 if downsampling > 1:
-                    frame = cv2.resize(frame, None, None, 1.0/downsampling, 1.0/downsampling, cv2.INTER_AREA)	               
+                    frame = cv2.resize(frame, None, None, 1.0/downsampling, 1.0/downsampling, cv2.INTER_AREA)
                 cv2.imwrite(out + "frame_{}_{}_{}.JPG".format(start, step, frame_number), frame)
                 print("Saving frame {}".format(frame_number))
         
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
     else:
-        print("Unable to open file.")
+        print("Unable to open the file.")
         
     cap.release()
 

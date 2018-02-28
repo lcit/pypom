@@ -19,12 +19,26 @@ from pypom import utils
 
 __author__ = "Leonardo Citraro"
 __email__ = "leonardo.citraro@epfl.ch"
+
+class BackgroundSubstractionAVG:
+    def __init__(self, alpha, threshold):
+        self.alpha  = alpha
+        self.threshold = threshold
+        self.backGroundModel = None
+
+    def apply(self, frame):
+        if self.backGroundModel is None:
+            self.backGroundModel =  frame
+        else:
+            self.backGroundModel =  frame * self.alpha + self.backGroundModel * (1 - self.alpha)
+
+        return np.uint8(np.logical_or.reduce(cv2.absdiff(self.backGroundModel.astype(np.uint8), frame) > self.threshold, 2)*255)
     
 def main(input_folder = ".",
          output_folder = ".",
          sigma = 1.0,
-         history = 500,
-         varThreshold = 16):
+         alpha = 0.5,
+         threshold=32):
     """ Compute simple background substraction.
     
     Parameters
@@ -35,10 +49,10 @@ def main(input_folder = ".",
         path where to save the resulting images 
     sigma : float
         Gaussian blurring sigma applied to the image before entering the subtractor
-    history : int
-        Opencv MOG2 backgrond sub history
-    varThreshold : int
-        Opencv MOG2 backgrond sub varThreshold
+    alpha : float [0,1]
+        Parameter affecting the learning rate of the backgorund
+    threshold : int
+        Threshold used to separate background from foregraound after abs-substraction
     """
     
     print("input_folder:", input_folder)
@@ -49,7 +63,7 @@ def main(input_folder = ".",
     
     utils.mkdir(output_folder)
     
-    model = cv2.createBackgroundSubtractorMOG2(history, varThreshold, detectShadows = True)
+    model = BackgroundSubstractionAVG(alpha, threshold)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
     
     for i, filename in enumerate(filenames):
@@ -61,8 +75,7 @@ def main(input_folder = ".",
         img = np.uint8(utils.gaussian_blurring(img, sigma))
         
         pred = model.apply(img)
-        pred = cv2.morphologyEx(pred, cv2.MORPH_OPEN, kernel)    
-        pred = np.uint8((pred==255)*255) # this removes the shadow
+        pred = cv2.morphologyEx(pred, cv2.MORPH_OPEN, kernel)  
         
         utils.save_image(os.path.join(output_folder, "bg_{}.png".format(i)), pred)    
     
@@ -72,8 +85,8 @@ if __name__ == "__main__":
     parser.add_argument("--input_folder", "-i", type=str, required=True)
     parser.add_argument("--output_folder", "-o", type=str, required=True)
     parser.add_argument("--sigma", "-s", type=float, default=1.0, required=False)
-    parser.add_argument("--history", "-y", type=int, default=500, required=False)
-    parser.add_argument("--varThreshold", "-t", type=int, default=16, required=False)
+    parser.add_argument("--alpha", "-a", type=float, default=0.5, required=False)
+    parser.add_argument("--threshold", "-t", type=int, default=32, required=False)
 
     args = parser.parse_args()
     main(**vars(args)) 
