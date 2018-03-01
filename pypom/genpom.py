@@ -6,33 +6,43 @@ import os
 from matplotlib.path import Path
 import cv2
 import numpy as np
-import xml.etree.ElementTree
 import numbers
 from . import utils
 
 __author__ = "Leonardo Citraro"
-__email__ = "leonardo.citraro@epfl.ch"
+__email__ = "leonardo.citraro@epfl.ch" 
 
-def mkdir(directory):
-    directory = os.path.abspath(directory)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        
-def transform_points(H, points):
-    # convertPointsFromHomogeneous has some problem when dealing with non float values!
-    points = points.astype(np.float)
+def Room(object):
+    def __init__(self, unit, width, height, step_x, step_y, origin_x, origin_y, n_cams):  
+        self.width = width
+        self.height = height
+        self.step_x = step_x
+        self.step_y = step_y
+        self.origin_x = origin_x
+        self.origin_y = origin_y
+        self.n_cams = n_cams
     
-    # if points is just a vector we need to add a new dimension to make it working correctly
-    if np.ndim(points) == 1:
-        points = points[np.newaxis,:]
-    return cv2.convertPointsFromHomogeneous(np.dot(H, cv2.convertPointsToHomogeneous(points)[:,0,:].T).T)[:,0,:] 
+    def world_grid(self, unit="m"):
+        unit_conv = lambda x: utils.value_unit_conversion(x, self.unit, unit)
+        world_grid = []
+        for i in range(self.width//self.step_x):
+            for j in range(self.height//self.step_y):
+                world_grid.append([unit_conv(self.origin_x - i*self.step_x),
+                                   unit_conv(self.origin_y - j*self.step_y),
+                                   0])   
+        return np.array(world_grid) 
+    
+def Man(object):
+    def __init__(self, unit="m", ray=0.16, height=1.8):  
+        self.unit = unit
+        self.ray = ray
+        self.height = height
+    
+    def ray(self, unit="m"):
+        return utils.value_unit_conversion(self.ray, self.unit, unit)
 
-def project_KRt(points, R, t, K, dist=None):
-    homogeneous = np.dot(K, (np.dot(R, points.T) + t)).T
-    image_points = homogeneous[:,:2] / homogeneous[:,[2]]  
-    if dist is not None:
-        image_points = cv2.undistortPoints(image_points[:,np.newaxis].astype(np.float32), K, dist) 
-    return image_points          
+    def height(self, unit="m"):
+        return utils.value_unit_conversion(self.ray, self.unit, unit)            
         
 class Camera(object):
     def __init__(self, K=None, R=None, t=None, distCoeffs=None, rvec=None, H_ground=None, H_head=None, head_height=None):
@@ -45,21 +55,12 @@ class Camera(object):
         self.H_head = H_head
         self.head_height = head_height
         
-        assert(isinstance(self.K, np.ndarray) or self.K is None)
-        assert(isinstance(self.R, np.ndarray) or self.R is None)
-        assert(isinstance(self.t, np.ndarray) or self.t is None)
-        assert(isinstance(self.distCoeffs, np.ndarray) or self.distCoeffs is None)
-        assert(isinstance(self.rvec, np.ndarray) or self.rvec is None)
-        assert(isinstance(self.H_ground, np.ndarray) or self.H_ground is None)
-        assert(isinstance(self.H_head, np.ndarray) or self.H_head is None)
-        assert(isinstance(self.head_height, int) or self.head_height is None)
-        
     def project_points(self, world_points):
         if self.rvec is not None:
             image_points, _ = cv2.projectPoints(world_points, self.rvec, self.tvec, self.K, self.distCoeffs)
             return image_points.squeeze() 
         elif self.R is not None:
-            return project_KRt(world_points, self.R, self.t, self.K, self.distCoeffs)        
+            return utils.project_KRt(world_points, self.R, self.t, self.K, self.distCoeffs)        
         else:
             raise RuntimeError("Neither rvec nor R are defined!")
     
@@ -68,7 +69,7 @@ class Camera(object):
             if isinstance(self.H_ground, numbers.Number):
                 return 
             else:
-                return transform_points(self.H_ground, world_points[:,:2])
+                return utils.transform_points(self.H_ground, world_points[:,:2])
         elif self.rvec is not None or self.R is not None:
             return self.project_points(world_points)       
         else:
@@ -76,7 +77,7 @@ class Camera(object):
     
     def project_top_points(self, world_points):
         if self.H_head is not None:
-            return transform_points(self.H_head, world_points[:,:2])
+            return utils.transform_points(self.H_head, world_points[:,:2])
         elif self.head_height is not None:
             # special case, doing so we are telling the caller of this function 
             # to use the bottom points as only reference to build the rectangle
@@ -87,19 +88,56 @@ class Camera(object):
             raise RuntimeError("Neither rvec nor H_head are defined!")   
 
     @classmethod
-    def from_json(cls, intrinsics_json, extrinsics_json, downsampling):
+    def from_json(cls, intrinsics_json, extrinsics_json):
         K, dist, image_shape_i = utils.retrieve_intrinsics_from_json(intrinsics_json)        
         R, t, image_shape_e, unit = utils.retrieve_extrinsics_from_json(extrinsics_json)
         if image_shape_i[0]!=image_shape_e[0] or image_shape_i[1]!=image_shape_e[1]:
             raise ValueError("Image shapes inside intrinsics and extrinsics files are not equal!")
             
-        K = utils.scale_homography(K, 1.0/downsampling)
+        K = utils.homography_unit_conversion(K, in_unit=unit, out_unit="m")
+        ....???
         
         return cls(K=K, R=R, t=t)
-                             
+
+def percentage_intersection(rectangle, image_height, image_width):
+    
+    image_polygon = np.array([[0, 0],
+                              [0, image_height],
+                              [image_width, image_height],
+                              [image_width, 0]])
+    img_path  = Path(image_polygon)
+    
+    rect_grid = np.meshgrid(np.linspace(rectangle.xmin, rectangle.xmax, 10), 
+                            np.linspace(rectangle.ymin, rectangle.ymax, 10))
+    rect_grid = np.vstack([rect_grid[0].ravel(), rect_grid[1].ravel()]).T
+    
+    return img_path.contains_points(rect_grid).sum()/len(rect_grid)
+
+def is_rect_visible(rectangle, image_width, image_height, p_visible=0.2):
+    return percentage_intersection(image_width, image_height) > p_visible
+                      
+def is_rect_intersecting(rectangle, image_width, image_height):
+    
+    image_polygon = np.array([[0, 0],
+                              [0, image_height],
+                              [image_width, image_height],
+                              [image_width, 0]])
+    img_path  = Path(image_polygon)
+    rect_path = Path(rectangle.points())
+
+    return img_path.intersects_path(rect_path)    
+    
+def is_inside(rectangle, image_width, image_height):
+    image_polygon = np.array([[0, 0],
+                              [0, image_height-1],
+                              [image_width-1, image_height-1],
+                              [image_width-1, 0]])
+    img_path  = Path(image_polygon)
+    
+    return np.alltrue(img_path.contains_points(rectangle.points()))       
 
 class Rectangle(object):
-    def __init__(self, cam, idx, xmin, ymin, xmax, ymax):
+    def __init__(self, cam=None, idx=None, visible=None, xmin=None, ymin=None, xmax=None, ymax=None):
         self.cam = cam
         self.idx = idx
         self.xmin = int(xmin)
@@ -108,7 +146,7 @@ class Rectangle(object):
         self.ymax = int(ymax)
     
     def __str__(self):
-        return "{self.__class__.__name__}(cam={self.cam}, idx={self.idx}, xmin={self.xmin}," \
+        return "{self.__class__.__name__}(cam={self.cam}, idx={self.idx}, visible={self.visible}, xmin={self.xmin}," \
                "ymin={self.ymin}, xmax={self.xmax}, ymax={self.ymax})".format(self=self)
 
     def points(self): 
@@ -117,55 +155,34 @@ class Rectangle(object):
         points.append((self.xmin, self.ymax))
         points.append((self.xmax, self.ymax))
         points.append((self.xmax, self.ymin))
-        return np.vstack(points)
+        return np.vstack(points)   
     
-    def is_intersecting(self, image_width, image_height):
-        
-        image_polygon = np.array([[0, 0],
-                                  [0, image_height],
-                                  [image_width, image_height],
-                                  [image_width, 0]])
-        img_path  = Path(image_polygon)
-        rect_path = Path(self.points())
-
-        return img_path.intersects_path(rect_path)    
-    
-    def percentage_intersection(self, image_width, image_height):
-        
-        image_polygon = np.array([[0, 0],
-                                  [0, image_height],
-                                  [image_width, image_height],
-                                  [image_width, 0]])
-        img_path  = Path(image_polygon)
-        
-        rect_grid = np.meshgrid(np.linspace(self.xmin, self.xmax, 10), 
-                                np.linspace(self.ymin, self.ymax, 10))
-        rect_grid = np.vstack([rect_grid[0].ravel(), rect_grid[1].ravel()]).T
-        
-        return img_path.contains_points(rect_grid).sum()/len(rect_grid)
-    
-    def is_visible(self, image_width, image_height, p_visible):
-        return self.percentage_intersection(image_width, image_height) > p_visible
-    
-    def is_inside(self, image_width, image_height):
-        image_polygon = np.array([[0, 0],
-                                  [0, image_height-1],
-                                  [image_width-1, image_height-1],
-                                  [image_width-1, 0]])
-        img_path  = Path(image_polygon)
-        
-        return np.alltrue(img_path.contains_points(self.points()))
-    
-    def to_string(self, image_width, image_height, p_visible):     
-        if self.is_inside(image_width, image_height) and self.is_visible(image_width, image_height, p_visible):
-            return "RECTANGLE {} {} {} {} {} {}".format(self.cam, self.idx, 
-                                                       self.xmin, self.ymin, self.xmax, self.ymax)
+    def to_string(self):     
+        if self.visible:
+            return "RECTANGLE {self.cam} {self.idx} {self.xmin} {self.ymin} {self.xmax} {self.ymax}".format(self=self)
         else:
-            return "RECTANGLE {} {} notvisible".format(self.cam, self.idx)
+            return "RECTANGLE {self.cam} {self.idx} notvisible".format(self=self)
         
     @classmethod
     def from_string(cls, string):
-        return cls(*[int(x) for x in string.split(' ')])   
+        if "RECTANGLE" not in string:
+            raise ValueError("The string has to start with RECTANGLE")
+        elements = string.strip().split(' ')
+        cam = int(elements[1])
+        idx = int(elements[2])
+        if "not" in elements[3]:
+            visible = False
+            xmin = None
+            ymin = None
+            xmax = None
+            ymax = None 
+        else:
+            visible = True
+            xmin = int(elements[3])
+            ymin = int(elements[4])
+            xmax = int(elements[5])
+            ymax = int(elements[6]) 
+        return cls(cam, idx, visible, xmin, ymin, xmax, ymax)   
 
 class Cilinder(object):
     # in the case you use the ground and head homographies the parameter height is no longuer meaningful
@@ -258,18 +275,18 @@ class POM(object):
             raise ValueError("input_view_format cannot be None!")
         self.input_view_format = input_view_format
         self._check_png(self.input_view_format)
-        mkdir(os.path.dirname(self.input_view_format))        
+        utils.mkdir(os.path.dirname(self.input_view_format))        
         
         self.result_view_format = result_view_format
         self._check_png(self.result_view_format)
-        mkdir(os.path.dirname(self.result_view_format)) 
+        utils.mkdir(os.path.dirname(self.result_view_format)) 
            
         self.result_format = result_format
-        mkdir(os.path.dirname(self.result_format))
+        utils.mkdir(os.path.dirname(self.result_format))
             
         self.convergence_view_format = convergence_view_format  
         self._check_png(self.convergence_view_format)
-        mkdir(os.path.dirname(self.convergence_view_format))
+        utils.mkdir(os.path.dirname(self.convergence_view_format))
         
         self.prior = prior
         self.sigma_image_density = sigma_image_density        
@@ -285,7 +302,7 @@ class POM(object):
         assert(filename.lower().split('.')[-1] == 'png')
 
     def write_to_file(self, filename):
-        mkdir(os.path.dirname(filename))
+        utils.mkdir(os.path.dirname(filename))
         
         text_file = open(filename, "w")
         text_file.write("ROOM {} {} {} {}\n\n".format(self.img_width, self.img_height, self.n_cams, self.n_poss))
@@ -319,11 +336,63 @@ def generate_rectangles(world_grid, cameras, man_ray, man_height, verbose=True):
     rectangles = []
     for c, camera in enumerate(cameras):
         if verbose:
-            print("Processing rectangles for camera {}..".format(c))
+            print("Generating rectangles for camera {}..".format(c))
         temp = []
         for idx, point in enumerate(world_grid):
             cilinder = Cilinder(man_ray, man_height, (point[0], point[1], 0))
             rect = Rectangle(c, idx, *cilinder.project(camera)) 
             temp.append(rect)
         rectangles.append(temp)
-    return rectangles        
+    return rectangles 
+
+def read_pom_file(filename):
+    with open(filename, "r") as f:
+        lines = f.read_lines()
+    
+    cam_ = []
+    rectangles_ = []
+    for line in lines:  
+        if "RECTANGLE" in line:
+            r = Rectangle.from_string(line)
+            rectangles_.append(r) 
+            cam_.append(r.cam)
+        elif "ROOM" in line: 
+            elements = line.strip().split(' ')
+            view_width  = int(elements[1])
+            view_height = int(elements[2])
+            n_cams      = int(elements[3])
+            n_positions = int(elements[4])
+        elif "INPUT_VIEW_FORMAT" in line:
+            elements = line.strip().split(' ')
+            input_view_format = elements[1]
+        elif "RESULT_VIEW_FORMAT" in line:    
+            elements = line.strip().split(' ')
+            result_view_format = elements[1]            
+        elif "RESULT_FORMAT" in line:             
+            elements = line.strip().split(' ')
+            result_format = elements[1]             
+        elif "PRIOR" in line:             
+            elements = line.strip().split(' ')
+            prior = float(elements[1])
+        elif "SIGMA_IMAGE_DENSITY" in line: 
+            elements = line.strip().split(' ')
+            sigma_image_density = float(elements[1])            
+        elif "MAX_NB_SOLVER_ITERATIONS" in line: 
+            elements = line.strip().split(' ')
+            max_nb_solver_iterations = int(elements[1])                          
+        elif "PROBA_IGNORED" in line: 
+            elements = line.strip().split(' ')
+            proba_ignored = float(elements[1])                         
+        elif "PROCESS" in line: 
+            elements = line.strip().split(' ')
+            idx_start   = int(elements[1])
+            run_for     = int(elements[2])  
+
+    cam_ = np.array(cam_)
+    rectangles_ = np.array(rectangles_)   
+
+    camsid = utils.sort_nicely(set(cam_))
+        
+    rectangles = np.array([rectangles_[np.where(cam_==c)[0]] for c in camsid])
+                        
+ 

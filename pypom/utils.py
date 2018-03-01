@@ -28,6 +28,13 @@ def transform_points(H, points):
         points = points[np.newaxis,:]
     return cv2.convertPointsFromHomogeneous(np.dot(H, cv2.convertPointsToHomogeneous(points)[:,0,:].T).T)[:,0,:]
 
+def project_KRt(points, R, t, K, dist=None):
+    homogeneous = np.dot(K, (np.dot(R, points.T) + t)).T
+    image_points = homogeneous[:,:2] / homogeneous[:,[2]]  
+    if dist is not None:
+        image_points = cv2.undistortPoints(image_points[:,np.newaxis].astype(np.float32), K, dist) 
+    return image_points   
+
 def json_read(filename):
     with open(filename) as f:    
         data = json.load(f)
@@ -267,6 +274,30 @@ def rotvector_to_rotmatrix(rotvector):
     a, b, c = rotvector
     skew = np.array([[0, -c, b], [c, 0, -a], [-b, a, 0]])
     return expm(skew)
+
+unit_conversion  =  {"cm":{"cm":lambda x: x,
+                           "m":lambda x: x*0.01,
+                           "ft":lambda x: x*0.0328084,
+                           "in":lambda x: x*0.393701},
+                     "m" :{"cm":lambda x: x*100,
+                           "m":lambda x: x,
+                           "ft":lambda x: x*3.28084,
+                           "in":lambda x: x*39.3701},
+                     "ft":{"cm":lambda x: x*30.48,
+                           "m":lambda x: x*0.3048,
+                           "ft":lambda x: x,
+                           "in":lambda x: x*12},
+                     "in":{"cm":lambda x: x*2.54,
+                           "m":lambda x: x*0.0254,
+                           "ft":lambda x: x*0.0833333,
+                           "in":lambda x: x}}
+
+def value_unit_conversion(value, in_unit="cm", out_unit="cm"):
+    return unit_conversion[in_unit][out_unit](value)
+
+def homography_unit_conversion(H, in_unit="cm", out_unit="cm"):
+    scale = unit_conversion[in_unit][out_unit](1)
+    return scale_homography(H, scale)
 
 # https://c4science.ch/source/posenet/browse/master/unet_utils.py
 # Pablo Marquez Neila 
