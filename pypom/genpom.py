@@ -7,13 +7,13 @@ from matplotlib.path import Path
 import cv2
 import numpy as np
 import numbers
-from . import utils
+import utils
 
 __author__ = "Leonardo Citraro"
 __email__ = "leonardo.citraro@epfl.ch" 
 
-def Room(object):
-    def __init__(self, unit, width, height, step_x, step_y, origin_x, origin_y, n_cams):  
+class Room(object):
+    def __init__(self, width, height, step_x, step_y, origin_x, origin_y, n_cams):  
         self.width = width
         self.height = height
         self.step_x = step_x
@@ -22,83 +22,15 @@ def Room(object):
         self.origin_y = origin_y
         self.n_cams = n_cams
     
-    def world_grid(self, unit="m"):
-        unit_conv = lambda x: utils.value_unit_conversion(x, self.unit, unit)
+    def world_grid(self):
         world_grid = []
         for i in range(self.width//self.step_x):
             for j in range(self.height//self.step_y):
-                world_grid.append([unit_conv(self.origin_x - i*self.step_x),
-                                   unit_conv(self.origin_y - j*self.step_y),
+                world_grid.append([self.origin_x - i*self.step_x,
+                                   self.origin_y - j*self.step_y,
                                    0])   
-        return np.array(world_grid) 
+        return np.float64(world_grid) 
     
-def Man(object):
-    def __init__(self, unit="m", ray=0.16, height=1.8):  
-        self.unit = unit
-        self.ray = ray
-        self.height = height
-    
-    def ray(self, unit="m"):
-        return utils.value_unit_conversion(self.ray, self.unit, unit)
-
-    def height(self, unit="m"):
-        return utils.value_unit_conversion(self.ray, self.unit, unit)            
-        
-class Camera(object):
-    def __init__(self, K=None, R=None, t=None, distCoeffs=None, rvec=None, H_ground=None, H_head=None, head_height=None):
-        self.K = K
-        self.R = R
-        self.t = t
-        self.distCoeffs = distCoeffs
-        self.rvec = rvec
-        self.H_ground = H_ground
-        self.H_head = H_head
-        self.head_height = head_height
-        
-    def project_points(self, world_points):
-        if self.rvec is not None:
-            image_points, _ = cv2.projectPoints(world_points, self.rvec, self.tvec, self.K, self.distCoeffs)
-            return image_points.squeeze() 
-        elif self.R is not None:
-            return utils.project_KRt(world_points, self.R, self.t, self.K, self.distCoeffs)        
-        else:
-            raise RuntimeError("Neither rvec nor R are defined!")
-    
-    def project_bottom_points(self, world_points):
-        if self.H_ground is not None:
-            if isinstance(self.H_ground, numbers.Number):
-                return 
-            else:
-                return utils.transform_points(self.H_ground, world_points[:,:2])
-        elif self.rvec is not None or self.R is not None:
-            return self.project_points(world_points)       
-        else:
-            raise RuntimeError("Neither rvec nor H_ground are defined!")
-    
-    def project_top_points(self, world_points):
-        if self.H_head is not None:
-            return utils.transform_points(self.H_head, world_points[:,:2])
-        elif self.head_height is not None:
-            # special case, doing so we are telling the caller of this function 
-            # to use the bottom points as only reference to build the rectangle
-            return self.head_height 
-        elif self.rvec is not None or self.R is not None:
-            return self.project_points(world_points)        
-        else:
-            raise RuntimeError("Neither rvec nor H_head are defined!")   
-
-    @classmethod
-    def from_json(cls, intrinsics_json, extrinsics_json):
-        K, dist, image_shape_i = utils.retrieve_intrinsics_from_json(intrinsics_json)        
-        R, t, image_shape_e, unit = utils.retrieve_extrinsics_from_json(extrinsics_json)
-        if image_shape_i[0]!=image_shape_e[0] or image_shape_i[1]!=image_shape_e[1]:
-            raise ValueError("Image shapes inside intrinsics and extrinsics files are not equal!")
-            
-        K = utils.homography_unit_conversion(K, in_unit=unit, out_unit="m")
-        ....???
-        
-        return cls(K=K, R=R, t=t)
-
 def percentage_intersection(rectangle, image_height, image_width):
     
     image_polygon = np.array([[0, 0],
@@ -137,63 +69,68 @@ def is_inside(rectangle, image_width, image_height):
     return np.alltrue(img_path.contains_points(rectangle.points()))       
 
 class Rectangle(object):
-    def __init__(self, cam=None, idx=None, visible=None, xmin=None, ymin=None, xmax=None, ymax=None):
-        self.cam = cam
-        self.idx = idx
+    # (ymin, xmin) is the top-left corner of the rectangle in the image
+    # (ymax, xmax) is instead the bottom-right corner of the rectangle in the image
+    def __init__(self, xmin=None, ymin=None, xmax=None, ymax=None, visible=None):
         self.xmin = int(xmin)
         self.ymin = int(ymin)
         self.xmax = int(xmax)
         self.ymax = int(ymax)
+        self.visible = visible
     
     def __str__(self):
-        return "{self.__class__.__name__}(cam={self.cam}, idx={self.idx}, visible={self.visible}, xmin={self.xmin}," \
-               "ymin={self.ymin}, xmax={self.xmax}, ymax={self.ymax})".format(self=self)
+        return "{self.__class__.__name__}(xmin={self.xmin}, ymin={self.ymin}, xmax={self.xmax}," \
+               "ymax={self.ymax}, visible={self.visible})".format(self=self)
 
     def points(self): 
         points = []
-        points.append((self.xmin, self.ymin))
-        points.append((self.xmin, self.ymax))
-        points.append((self.xmax, self.ymax))
-        points.append((self.xmax, self.ymin))
-        return np.vstack(points)   
+        points.append((self.ymin, self.xmin))
+        points.append((self.ymin, self.xmax))
+        points.append((self.ymax, self.xmax))
+        points.append((self.ymax, self.xmin))
+        return np.vstack(points) 
     
-    def to_string(self):     
-        if self.visible:
-            return "RECTANGLE {self.cam} {self.idx} {self.xmin} {self.ymin} {self.xmax} {self.ymax}".format(self=self)
-        else:
-            return "RECTANGLE {self.cam} {self.idx} notvisible".format(self=self)
-        
-    @classmethod
-    def from_string(cls, string):
-        if "RECTANGLE" not in string:
-            raise ValueError("The string has to start with RECTANGLE")
-        elements = string.strip().split(' ')
-        cam = int(elements[1])
-        idx = int(elements[2])
-        if "not" in elements[3]:
-            visible = False
-            xmin = None
-            ymin = None
-            xmax = None
-            ymax = None 
-        else:
-            visible = True
-            xmin = int(elements[3])
-            ymin = int(elements[4])
-            xmax = int(elements[5])
-            ymax = int(elements[6]) 
-        return cls(cam, idx, visible, xmin, ymin, xmax, ymax)   
-
+    def slices(self):
+        return (slice(self.ymin, self.ymax), slice(self.xmin, self.xmax))
+'''    
+def to_string(self):     
+    if self.visible:
+        return "RECTANGLE {self.cam} {self.idx} {self.xmin} {self.ymin} {self.xmax} {self.ymax}".format(self=self)
+    else:
+        return "RECTANGLE {self.cam} {self.idx} notvisible".format(self=self)
+'''
+'''        
+@classmethod
+def from_string(cls, string):
+    if "RECTANGLE" not in string:
+        raise ValueError("The string has to start with RECTANGLE")
+    elements = string.strip().split(' ')
+    cam = int(elements[1])
+    idx = int(elements[2])
+    if "not" in elements[3]:
+        visible = False
+        xmin = None
+        ymin = None
+        xmax = None
+        ymax = None 
+    else:
+        visible = True
+        xmin = int(elements[3])
+        ymin = int(elements[4])
+        xmax = int(elements[5])
+        ymax = int(elements[6]) 
+    return cls(cam, idx, visible, xmin, ymin, xmax, ymax)
+'''
 class Cilinder(object):
     # in the case you use the ground and head homographies the parameter height is no longuer meaningful
     def __init__(self, radius, height, base_center=None):
         self.radius = radius
         self.height = height
         if base_center is None:
-            self.base_center = (0, 0) # (x,y) meters
+            self.base_center = (0,0) # (x,y) meters
         else:
             self.base_center = base_center # (x,y) meters
-            
+
     def __str__(self):
         return "{self.__class__.__name__}(radius={self.radius}, height={self.height}," \
                "base_center={self.base_center})".format(self=self)            
@@ -208,11 +145,11 @@ class Cilinder(object):
         for a in angles:
             points.append((np.cos(a)*self.radius + self.base_center[0], 
                            np.sin(a)*self.radius + self.base_center[1], 
-                           self.base_center[2]))
+                           0))
         
         # the bottom and top central points of the cilinder
-        points.append((self.base_center[0], self.base_center[1], self.base_center[2]))
-        return np.vstack(points) 
+        points.append((self.base_center[0], self.base_center[1], 0))
+        return np.vstack(points)
 
     def top_points(self):        
         angles = np.arange(0, 2*np.pi, 0.314)
@@ -220,40 +157,36 @@ class Cilinder(object):
         for a in angles:
             points.append((np.cos(a)*self.radius + self.base_center[0], 
                            np.sin(a)*self.radius + self.base_center[1], 
-                           self.base_center[2]+self.height))
+                           self.height))
         
         # the bottom and top central points of the cilinder
-        points.append((self.base_center[0], self.base_center[1], self.base_center[2]+self.height))
+        points.append((self.base_center[0], self.base_center[1], self.height))
         return np.vstack(points)     
         
-    def project(self, camera):
-        
+    def project_with(self, camera):        
         # we split bottom from top points because it possible that the full camera pose is not provided.
         # Instead you can provide ground and head homographies.
         
-        image_points_bot = camera.project_bottom_points(self.bottom_points())
         image_points_top = camera.project_top_points(self.top_points())
-        if isinstance(image_points_top, int):
-            # special case, image_points_top is an integer that defines the height(top part) of the rectangle
-            image_points = np.vstack([image_points_bot])
-        else:
-            image_points = np.vstack([image_points_bot, image_points_top])
+        image_points_bot = camera.project_bottom_points(self.bottom_points())
+        image_points = np.vstack([image_points_bot, image_points_top])
         
-        x_proj_min = image_points[:,0].min() # (pixels)       
-        x_proj_max = image_points[:,0].max() # (pixels) 
+        x_proj_min = image_points[:,1].min() # (pixels)       
+        x_proj_max = image_points[:,1].max() # (pixels) 
         
-        c_proj_bot = image_points_bot[-1,1] # projected bottom central point (pixels)
-        if isinstance(image_points_top, int):
-            c_proj_top = image_points_top
-        else:
-            c_proj_top = image_points_top[-1,1] # projected top central point (pixels)
+        c_proj_bot = image_points_bot[-1,0] # projected bottom central point (pixels)
+        c_proj_top = image_points_top[-1,0] # projected top central point (pixels)
         
+        # (ymin, xmin) is the top-left corner of the rectangle in the image
+        # (ymax, xmax) is instead the bottom-right corner of the rectangle in the image
+        ymin = c_proj_top 
         xmin = x_proj_min
         ymax = c_proj_bot
-        xmax = x_proj_max
-        ymin = c_proj_top
+        xmax = x_proj_max        
+        
+        rectangle = Rectangle(xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax, visible=None)
 
-        return xmin, ymin, xmax, ymax
+        return rectangle
     
 class POM(object):
     def __init__(self, img_width, img_height, rectangles, 

@@ -26,14 +26,22 @@ def transform_points(H, points):
     # if points is just a vector we need to add a new dimension to make it working correctly
     if np.ndim(points) == 1:
         points = points[np.newaxis,:]
-    return cv2.convertPointsFromHomogeneous(np.dot(H, cv2.convertPointsToHomogeneous(points)[:,0,:].T).T)[:,0,:]
+    projected_points = cv2.convertPointsFromHomogeneous(np.dot(H, cv2.convertPointsToHomogeneous(points)[:,0,:].T).T)[:,0,:]
+    
+    # projected_points is in image pixels.
+    # The first column defines the vertical position of the point, the second column 
+    # defines the horizonal position as in numpy notation
+    return np.hstack([projected_points[:,[1]], projected_points[:,[0]]])
 
-def project_KRt(points, R, t, K, dist=None):
-    homogeneous = np.dot(K, (np.dot(R, points.T) + t)).T
-    image_points = homogeneous[:,:2] / homogeneous[:,[2]]  
+def project_KRt(world_points, R, t, K, dist=None):
+    homogeneous = np.dot(K, (np.dot(R, world_points.T) + t.reshape(3,1))).T
+    projected_points = homogeneous[:,:2] / homogeneous[:,[2]]  
     if dist is not None:
-        image_points = cv2.undistortPoints(image_points[:,np.newaxis].astype(np.float32), K, dist) 
-    return image_points   
+        projected_points = cv2.undistortPoints(projected_points[:,np.newaxis].astype(np.float32), K, dist) 
+
+    # The first column defines the vertical position of the point in the image, the second column 
+    # defines the horizonal position as in numpy notation
+    return np.hstack([projected_points[:,[1]], projected_points[:,[0]]])   
 
 def json_read(filename):
     with open(filename) as f:    
@@ -150,6 +158,34 @@ def save_image(filename, image, quality='best'):
             imageio.imsave(filename, image)                 
         else:
             raise ValueError("Image format ({}) not covered.".format(extension))
+            
+def downsample_image(img, size, msigma=1.0, interpolation='area'):
+    scale_h = size[0]/img.shape[0]
+    scale_w = size[1]/img.shape[1]
+    
+    if interpolation == 'cubic':
+        interpolation=cv2.INTER_CUBIC
+    elif interpolation == 'area':
+        interpolation=cv2.INTER_AREA
+    elif interpolation == 'linear':
+        interpolation=cv2.INTER_LINEAR
+    
+    if msigma is not None and msigma > 0:
+        img = cv2.GaussianBlur(img, ksize=(0,0), sigmaX=1.0/scale_w*msigma, sigmaY=1.0/scale_h*msigma)
+    img = cv2.resize(img, dsize=(size[1], size[0]), interpolation=interpolation)
+    return img
+
+def upsample_image(img, size, interpolation='cubic'):
+
+    if interpolation == 'cubic':
+        interpolation=cv2.INTER_CUBIC
+    elif interpolation == 'area':
+        interpolation=cv2.INTER_AREA
+    elif interpolation == 'linear':
+        interpolation=cv2.INTER_LINEAR
+        
+    img = cv2.resize(img, dsize=(size[1], size[0]), interpolation=interpolation)
+    return img             
 
 def compute_edges(image, th0=None, th1=None, equalization=True):
     if np.ndim(image)==2:
@@ -199,73 +235,14 @@ def search_in_dict(dict, exact=None, groups=None):
                 if len(set(re.findall(re_expression, key, flags=re.I)))==len(group):
                     return value
     return None
-
-def retrieve_intrinsics_from_json(filename):
-    calibration = json_read(filename)
-
-    K = search_in_dict(calibration, "K", [("mtx"),("proj")])
-    if K is None:
-        raise RuntimeError("Unable to retrieve 'K' from file {}".format(filename))
         
-    dist = search_in_dict(calibration, "distCoeffs", [("dist")])      
-    if dist is None:
-        raise RuntimeError("Unable to retrieve 'distCoeffs' from file {}".format(filename)) 
-        
-    image_shape = search_in_dict(calibration, "image_shape", [("im","shape"), ("im","size"), ("size"), ("shape")])
-    if image_shape is None:
-        raise RuntimeError("Unable to retrieve 'image_shape' from file {}".format(filename))        
-
-    return np.array(K).reshape(3,3), np.array(dist).ravel(), np.array(image_shape).ravel()
-
-def retrieve_image_and_world_points_from_json(filename):
-    points = json_read(filename)
-    
-    image_points = search_in_dict(points, "image_points", [("image","point")])
-    if image_points is None:
-        raise RuntimeError("Unable to retrieve 'image_points' from file {}".format(filename))
-        
-    world_points = search_in_dict(points, "world_points", [("world","point"), ("model","point")])
-    if world_points is None:
-        raise RuntimeError("Unable to retrieve 'world_points' from file {}".format(filename))
-        
-    image_shape = search_in_dict(points, "image_shape", [("im","shape"), ("im","size"), ("size"), ("shape")])
-    if image_shape is None:
-        raise RuntimeError("Unable to retrieve 'image_shape' from file {}".format(filename))
-        
-    unit = search_in_dict(points, "unit", [("unit")])
-    if unit is None:
-        raise RuntimeError("Unable to retrieve 'unit' from file {}".format(filename))
-        
-    undistorted = search_in_dict(points, "distCoeffs", [("undist")])
-    if undistorted is None:
-        raise RuntimeError("Unable to retrieve 'undistorted' from file {}".format(filename))
-        
-    return np.array(image_points), np.array(world_points), np.array(image_shape).ravel(), unit, undistorted
-
-def retrieve_extrinsics_from_json(filename):
-    calibration = json_read(filename)
-    
-    R = search_in_dict(calibration, "R", [("Rot")])
-    if R is None:
-        raise RuntimeError("Unable to retrieve 'R' from file {}".format(filename))
-        
-    t = search_in_dict(calibration, "t", [("trans")])
-    if t is None:
-        raise RuntimeError("Unable to retrieve 't' from file {}".format(filename))
-
-    image_shape = search_in_dict(calibration, "image_shape", [("im","shape"), ("im","size"), ("size"), ("shape")])
-    if image_shape is None:
-        raise RuntimeError("Unable to retrieve 'image_shape' from file {}".format(filename))
-        
-    unit = search_in_dict(calibration, "unit", [("unit")])
-    if unit is None:
-        raise RuntimeError("Unable to retrieve 'unit' from file {}".format(filename))                
-
-    return np.array(R).reshape(3,3), np.array(t).reshape(3,1), np.array(image_shape).ravel(), unit
-        
-def scale_homography(H, scale):
+def scale_homography_left(H, scale):
     S = np.array([[scale, 0, 0], [0, scale, 0], [0,0,1]])
     return np.dot(S, H)
+
+def scale_homography_right(H, scale):
+    S = np.array([[scale, 0, 0], [0, scale, 0], [0,0,1]])
+    return np.dot(H, S)
 
 def rotmatrix_to_rotvector(R):
     return logm(R)[[2, 0, 1], [1, 2, 0]]
@@ -274,6 +251,17 @@ def rotvector_to_rotmatrix(rotvector):
     a, b, c = rotvector
     skew = np.array([[0, -c, b], [c, 0, -a], [-b, a, 0]])
     return expm(skew)
+
+def invert_Rt(R, t):
+    Ri = R.T
+    ti = np.dot(-Ri, t)
+    return Ri, ti
+
+def homography_from_Rt(R, t, K):
+    """ Retrieves homography matrix from rotaton and translation.
+    Also, make sure R and t are in the right verso, otherwise use invert_Rt()
+    """
+    return np.dot(K, np.hstack([R[:,0:2], t]))
 
 unit_conversion  =  {"cm":{"cm":lambda x: x,
                            "m":lambda x: x*0.01,
@@ -294,10 +282,6 @@ unit_conversion  =  {"cm":{"cm":lambda x: x,
 
 def value_unit_conversion(value, in_unit="cm", out_unit="cm"):
     return unit_conversion[in_unit][out_unit](value)
-
-def homography_unit_conversion(H, in_unit="cm", out_unit="cm"):
-    scale = unit_conversion[in_unit][out_unit](1)
-    return scale_homography(H, scale)
 
 # https://c4science.ch/source/posenet/browse/master/unet_utils.py
 # Pablo Marquez Neila 
