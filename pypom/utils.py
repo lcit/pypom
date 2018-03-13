@@ -150,11 +150,22 @@ def save_image(filename, image, quality='best'):
         if extension.lower() == '.png': 
             if quality == 'best':
                 imageio.imsave(filename, image, compress_level=0)
+            elif quality == 'medium':
+                imageio.imsave(filename, image, compress_level=4)
             elif quality == 'low':
                 imageio.imsave(filename, image, compress_level=9)    
             else:
                 imageio.imsave(filename, image)
-        elif extension.lower() in [".jpg",".jpeg",".bmp",".tiff",".png",".gif"]: 
+        elif extension.lower() in [".jpg",".jpeg"]: 
+            if quality == 'best':
+                imageio.imsave(filename, image, quality=100)
+            elif quality == 'medium':
+                imageio.imsave(filename, image, quality=75)
+            elif quality == 'low':
+                imageio.imsave(filename, image, quality=40)
+            else:
+                imageio.imsave(filename, image)
+        elif extension.lower() in [".bmp",".tiff",".gif"]: 
             imageio.imsave(filename, image)                 
         else:
             raise ValueError("Image format ({}) not covered.".format(extension))
@@ -235,6 +246,12 @@ def search_in_dict(dict, exact=None, groups=None):
                 if len(set(re.findall(re_expression, key, flags=re.I)))==len(group):
                     return value
     return None
+
+def progress_bar(value, msg, max, notches=20):   
+    p=int(value//((max-1)/notches))    
+    print("|"+"|"*(p)+">"+"_"*(notches-p)+"|"+msg, end="\r", flush=True)
+    if p==notches:
+        print("|"*(p+2), end="\r", flush=True) 
         
 def scale_homography_left(H, scale):
     S = np.array([[scale, 0, 0], [0, scale, 0], [0,0,1]])

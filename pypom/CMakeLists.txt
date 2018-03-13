@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.9)
 
-set(PY_LIB_NAME "pom_core")
+set(PY_LIB_NAME "core")
 
 set(GCC_COVERAGE_COMPILE_FLAGS "-std=c++14 -O2 -Wp,-w")
 set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} ${GCC_COVERAGE_COMPILE_FLAGS}" )

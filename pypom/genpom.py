@@ -21,11 +21,15 @@ class Room(object):
         self.origin_x = origin_x
         self.origin_y = origin_y
         self.n_cams = n_cams
+        
+        self.n_height = self.height//self.step_y
+        self.n_width = self.width//self.step_x
+        self.n_positions = self.n_height*self.n_width
     
     def world_grid(self):
         world_grid = []
-        for i in range(self.width//self.step_x):
-            for j in range(self.height//self.step_y):
+        for i in range(self.n_width):
+            for j in range(self.n_height):
                 world_grid.append([self.origin_x - i*self.step_x,
                                    self.origin_y - j*self.step_y,
                                    0])   
@@ -43,12 +47,12 @@ def percentage_intersection(rectangle, image_height, image_width):
                             np.linspace(rectangle.ymin, rectangle.ymax, 10))
     rect_grid = np.vstack([rect_grid[0].ravel(), rect_grid[1].ravel()]).T
     
-    return img_path.contains_points(rect_grid).sum()/len(rect_grid)
+    return np.around(img_path.contains_points(rect_grid).sum()/len(rect_grid), 2)
 
-def is_rect_visible(rectangle, image_width, image_height, p_visible=0.2):
-    return percentage_intersection(image_width, image_height) > p_visible
+def is_rect_visible(rectangle, image_height, image_width, p_visible=0.2):
+    return percentage_intersection(rectangle, image_height, image_width) > p_visible
                       
-def is_rect_intersecting(rectangle, image_width, image_height):
+def is_rect_intersecting(rectangle, image_height, image_width):
     
     image_polygon = np.array([[0, 0],
                               [0, image_height],
@@ -59,18 +63,34 @@ def is_rect_intersecting(rectangle, image_width, image_height):
 
     return img_path.intersects_path(rect_path)    
     
-def is_inside(rectangle, image_width, image_height):
+def is_inside(rectangle, image_height, image_width):
     image_polygon = np.array([[0, 0],
                               [0, image_height-1],
                               [image_width-1, image_height-1],
                               [image_width-1, 0]])
     img_path  = Path(image_polygon)
     
-    return np.alltrue(img_path.contains_points(rectangle.points()))       
+    return np.alltrue(img_path.contains_points(rectangle.points()))
+
+def constrain_rectangle_into_view(rectangle, image_height, image_width, p_visible=0.7):
+    if is_rect_visible(rectangle, image_height, image_width, p_visible):
+        rectangle.visible = True
+        rectangle.ymin = int(np.maximum(rectangle.ymin, 0))
+        rectangle.ymax = int(np.minimum(rectangle.ymax, image_height-1))
+        rectangle.xmin = int(np.maximum(rectangle.xmin, 0))
+        rectangle.xmax = int(np.minimum(rectangle.xmax, image_width-1))
+    else:
+        rectangle.visible = False
+        rectangle.ymin = None
+        rectangle.ymax = None
+        rectangle.xmin = None
+        rectangle.xmax = None
+    return rectangle        
 
 class Rectangle(object):
     # (ymin, xmin) is the top-left corner of the rectangle in the image
     # (ymax, xmax) is instead the bottom-right corner of the rectangle in the image
+    # the internal corner of the rectangles!
     def __init__(self, xmin=None, ymin=None, xmax=None, ymax=None, visible=None):
         self.xmin = int(xmin)
         self.ymin = int(ymin)
@@ -265,7 +285,7 @@ class POM(object):
         
         text_file.close()
         
-def generate_rectangles(world_grid, cameras, man_ray, man_height, verbose=True):
+def generate_rectangles(world_grid, cameras, man_ray, man_height, view_shape, p_visible=0.7, verbose=True):
     rectangles = []
     for c, camera in enumerate(cameras):
         if verbose:
@@ -273,10 +293,11 @@ def generate_rectangles(world_grid, cameras, man_ray, man_height, verbose=True):
         temp = []
         for idx, point in enumerate(world_grid):
             cilinder = Cilinder(man_ray, man_height, (point[0], point[1], 0))
-            rect = Rectangle(c, idx, *cilinder.project(camera)) 
-            temp.append(rect)
+            rectangle = cilinder.project_with(camera)
+            rectangle = constrain_rectangle_into_view(rectangle, *view_shape, p_visible)
+            temp.append(rectangle)
         rectangles.append(temp)
-    return rectangles 
+    return rectangles
 
 def read_pom_file(filename):
     with open(filename, "r") as f:
@@ -328,4 +349,185 @@ def read_pom_file(filename):
         
     rectangles = np.array([rectangles_[np.where(cam_==c)[0]] for c in camsid])
                         
- 
+
+class Solver(object):
+    def __init__(self, rectangles, prior=0.001, iterations=100, sigma=0.01, step=0.9, eps=1e-12):
+        self.rectangles = rectangles
+        self.prior = prior
+        self.iterations = iterations
+        self.sigma = sigma
+        self.step = step
+        self.eps = eps
+        
+        n_cams = rectangles.shape[0]
+        n_positions = rectangles.shape[1]
+        
+    def step(self, B, q):
+        
+        q_new = []
+        
+        for i in range(self.iterations):  
+            
+            if i%10==0:
+                print("Iteration: ",i)
+            
+            A = np.ones((n_cams,)+view_shape, type_t)
+            Ai = np.ones((n_cams,)+view_shape, type_t)
+            BAi = np.ones((n_cams,)+view_shape, type_t)
+            
+            for c, rs in enumerate(rectangles):
+    
+                A_ = pom_core.compute_A_(view_shape, rs, q)
+                             
+                A[c] = 1-A_ # 1-xk(1-qkAk)
+                Ai[c] = pom_core.integral_image(A_) # (1-A)
+                BAi[c] = pom_core.integral_image(A_*B[c]) # Bx(1-A)
+    
+                if debug:
+                    utils.save_image("./c{}/A/A{}.JPG".format(c,i), np.dstack([A[c], B[c], B[c]]))
+                
+            lAl = [np.sum(A[c]) for c in range(n_cams)]
+            lBxAl = [np.sum(B[c]*A[c]) for c in range(n_cams)]
+            lBl = [np.sum(B[c]) for c in range(n_cams)]
+    
+            psi0 = np.zeros((n_cams, n_positions), type_t)
+            psi1 = np.zeros((n_cams, n_positions), type_t) 
+             
+            for c, rs in enumerate(rectangles):
+                (p0,p1) = pom_core.compute_psi(Ai[c], BAi[c], lAl[c], lBxAl[c], lBl[c], rs, q) 
+                psi0[c] = p0  
+                psi1[c] = p1          
+    
+            psi1_psi0 = np.minimum(1/sigma*(psi1 - psi0).sum(0), 30)
+            q_new = np.array(q*step + (1-step)/(1+np.exp(lambd + psi1_psi0)), type_t)
+            
+            diff = np.abs((q_new-q)).mean()
+            if diff  < 1e-6:
+                n_stab += 1
+                if n_stab > 5:
+                    return q_new
+            else:
+                n_stab = 0        
+            q = q_new
+               
+        return q        
+        
+        
+def run(B, rectangles, q, lambd, prior=0.001, iterations=100, sigma=0.01, step=0.8, eps=1e-12, debug=False):
+    
+    n_stab = 0
+    n_positions = room.n_positions
+    n_cams = len(rectangles)
+    print(n_cams, n_positions)
+    H = B[0].shape[0]
+    W = B[0].shape[1]
+    
+    
+    if debug:
+        for c in range(n_cams):
+            utils.rmdir("./c{}/A".format(c))
+            utils.mkdir("./c{}/A".format(c))  
+    
+    for i in range(iterations):  
+        
+        if i%10==0:
+            print("Iteration: ",i)
+        
+        A = np.ones((n_cams,)+view_shape, type_t)
+        Ai = np.ones((n_cams,)+view_shape, type_t)
+        BAi = np.ones((n_cams,)+view_shape, type_t)
+        
+        for c, rs in enumerate(rectangles):
+            '''
+            A_ = np.ones(view_shape, type_t)
+            for k in range(n_positions):   
+                #if r.visible:
+                ymin = rs[(k*4)+0]
+                ymax = rs[(k*4)+1]
+                xmin = rs[(k*4)+2]
+                xmax = rs[(k*4)+3]
+                if ymin != -1:                    
+                    ymin = np.maximum(ymin, 0)
+                    ymax = np.minimum(ymax, H)
+                    xmin = np.maximum(xmin, 0)
+                    xmax = np.minimum(xmax, W)
+                    A_[ymin:ymax, xmin:xmax] *= 1-q[k]
+            
+            '''
+            A_ = pom_core.compute_A_(view_shape, rs, q)
+             
+            
+            A[c] = 1-A_ # 1-xk(1-qkAk)
+            Ai[c] = pom_core.integral_image(A_) # (1-A)
+            BAi[c] = pom_core.integral_image(A_*B[c]) # Bx(1-A)
+            '''
+            
+            A[c] = 1-A_ # 1-xk(1-qkAk)
+            Ai[c] = integral_array(A_) # (1-A)
+            BAi[c] = integral_array(B[c]*A_) # Bx(1-A)
+            '''
+            if debug:
+                utils.save_image("./c{}/A/A{}.JPG".format(c,i), np.dstack([A[c], B[c], B[c]]))
+            
+        lAl = [np.sum(A[c]) for c in range(n_cams)]
+        lBxAl = [np.sum(B[c]*A[c]) for c in range(n_cams)]
+        lBl = [np.sum(B[c]) for c in range(n_cams)]
+
+        psi0 = np.zeros((n_cams, n_positions), type_t)
+        psi1 = np.zeros((n_cams, n_positions), type_t) 
+         
+        for c, rs in enumerate(rectangles):
+            (p0,p1) = pom_core.compute_psi(Ai[c], BAi[c], lAl[c], lBxAl[c], lBl[c], rs, q) 
+            psi0[c] = p0  
+            psi1[c] = p1          
+        '''
+        for c,rs in enumerate(rectangles):
+            for k in range(n_positions):   
+                #if r.visible:
+                ymin = rs[(k*4)+0]
+                ymax = rs[(k*4)+1]
+                xmin = rs[(k*4)+2]
+                xmax = rs[(k*4)+3]
+                if ymin != -1:                    
+                    ymin = np.maximum(ymin, 0)
+                    ymax = np.minimum(ymax, H)
+                    xmin = np.maximum(xmin, 0)
+                    xmax = np.minimum(xmax, W)
+                    
+                    #l1_AxAkl = pom_core.integral_sum(Ai[c], r.ymin, r.ymax, r.xmin, r.xmax)
+                    l1_AxAkl = integral_sum(Ai[c][ymin:ymax,xmin:xmax])
+                    
+                    lAk0l = lAl[c] - q[k]/(1-q[k])*l1_AxAkl
+                    lAk1l = lAl[c] +               l1_AxAkl
+                    
+                    #lBx1_AxAkl = pom_core.integral_sum(BAi[c], r.ymin, r.ymax, r.xmin, r.xmax)
+                    lBx1_AxAkl = integral_sum(BAi[c][ymin:ymax, xmin:xmax])
+                    lBxAk0l = lBxAl[c] - q[k]/(1-q[k])*lBx1_AxAkl
+                    lBxAk1l = lBxAl[c] +               lBx1_AxAkl
+                    
+                    psi0[c][k] = 1/sigma*(lBl[c]-2*lBxAk0l+lAk0l)/lAk0l
+                    psi1[c][k] = 1/sigma*(lBl[c]-2*lBxAk1l+lAk1l)/lAk1l
+        '''           
+        #q_new = np.array(q*step + (1-step)/(1+np.exp(lambd + psi1.sum(0) - psi0.sum(0))), type_t)
+        
+        psi1_psi0 = np.minimum(1/sigma*(psi1 - psi0).sum(0), 30)
+        q_new = np.array(q*step + (1-step)/(1+np.exp(lambd + psi1_psi0)), type_t)
+        
+        '''
+        if np.abs((q_new-q).sum()) < 1e-2:
+            print("Solved at iteration: ", i)
+            return q_new
+        
+        '''
+        diff = np.abs((q_new-q)).mean()
+        if diff  < 1e-6:
+            n_stab += 1
+            if n_stab > 5:
+                print("Solved at iteration: ", i)
+                return q_new
+        else:
+            n_stab = 0        
+        q = q_new
+        
+    print("Solved at max iteration.")     
+    return q 
