@@ -18,10 +18,6 @@ set(Boost_USE_STATIC_RUNTIME OFF)
 
 add_library(${PY_LIB_NAME} SHARED wrapper.cpp)
 set_target_properties(${PY_LIB_NAME} PROPERTIES PREFIX "") # this removes the prefix lib 
-if(WIN32)
-  # Ensure the output binary is called example.pyd on Windows (not example.dll)
-  set_target_properties(${PY_LIB_NAME} PROPERTIES SUFFIX ".pyd")
-endif(WIN32)
 target_link_libraries(${PY_LIB_NAME} boost_python3 boost_numpy3 ${PYTHON_LIBRARIES} ${Boost_LIBRARIES})
 
 

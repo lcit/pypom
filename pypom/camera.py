@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-""" Camera classes used for projecting points.
+""" Camera related classes and functionalities.
 """
 
 import os
@@ -109,6 +109,24 @@ def retrieve_image_and_world_points_from_json(filename):
 
 class CameraKRt(object):
     """Camera from K, R and t.
+
+    Parameters
+    ----------
+    name : string 
+        Identifier for the camera
+    K : 2D numpy array (3,3)
+        Intrinsics parameters
+    R : 2D numpy array (3,3)
+        Rotation matrix
+    t : 1D numpy array (3,1)    
+        Translation vector 
+        ===> Make sure the unit is coherent with the points you want to project.
+             R remain the same, t has to change. Have a look at the 
+             function CameraKRt.from_json(.) <===
+    scale : int or float
+        Scaling factor to adapt the intrinsics K for different image resolutions.
+        If K has been computed on images of size (1080,1920) and you want to project
+        points on an image of size (270,480) the scaling factor should be 4.0.
     """ 
     def __init__(self, name, K, R, t, scale=1): 
         self.name = name
@@ -155,7 +173,25 @@ class CameraKRt(object):
 
 class CameraHbotHtop(object):
     """Camera from bottom and top homography.
-    """
+
+    Parameters
+    ----------
+    name : string 
+        Identifier for the camera
+    Hbottom : 2D numpy array (3,3)
+        Homography of the floor
+        ===> Make sure the unit is coherent with the points you want to project.
+             Have a look at the function CameraHbotHtop.from_json(.) <===
+    Htop : 2D numpy array (3,3)
+        Homography at head level
+        ===> Make sure the unit is coherent with the points you want to project.
+             Have a look at the function CameraHbotHtop.from_json(.) <===
+    scale : int or float
+        Scaling factor to adapt the homographies for different image resolutions.
+        If Hbottom or Htop have been computed on images of size (1080,1920) and you 
+        want to project points on an image of size (270,480) the scaling factor 
+        should be 4.0.
+    """ 
     def __init__(self, name, Hbottom, Htop, scale=1):
         self.name = name
         self.Hbottom = Hbottom
@@ -195,10 +231,23 @@ class CameraHbotHtop(object):
 
 class CameraHbotHeight(object):
     """Camera from bottom homography and head-height line.
-    """
 
-    # head_height is in pixels from the top of the image
-    # p_head_height is a percentage 
+    Parameters
+    ----------
+    name : string 
+        Identifier for the camera
+    Hbottom : 2D numpy array (3,3)
+        Homography of the floor
+        ===> Make sure the unit is coherent with the points you want to project.
+             Have a look at the function CameraHbotHtop.from_json(.) <===
+    head_height : int or float
+        Heads level in pixels starting from the top of the image
+    scale : int or float
+        Scaling factor to adapt the homographies for different image resolutions.
+        If Hbottom or Htop have been computed on images of size (1080,1920) and you 
+        want to project points on an image of size (270,480) the scaling factor 
+        should be 4.0.
+    """ 
     def __init__(self, Hbottom, head_height, scale=1):
         self.Hbottom = Hbottom
         self.head_height = head_height
