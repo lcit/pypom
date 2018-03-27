@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-""" Utility function.
+""" Utility functions.
 """
 
 import numpy as np
@@ -28,10 +28,7 @@ def transform_points(H, points):
         points = points[np.newaxis,:]
     projected_points = cv2.convertPointsFromHomogeneous(np.dot(H, cv2.convertPointsToHomogeneous(points)[:,0,:].T).T)[:,0,:]
     
-    # projected_points is in image pixels.
-    # The first column defines the vertical position of the point, the second column 
-    # defines the horizonal position as in numpy notation
-    return np.hstack([projected_points[:,[1]], projected_points[:,[0]]])
+    return projected_points #(x,y)
 
 def project_KRt(world_points, R, t, K, dist=None):
     homogeneous = np.dot(K, (np.dot(R, world_points.T) + t.reshape(3,1))).T
@@ -39,16 +36,14 @@ def project_KRt(world_points, R, t, K, dist=None):
     if dist is not None:
         projected_points = cv2.undistortPoints(projected_points[:,np.newaxis].astype(np.float32), K, dist) 
 
-    # The first column defines the vertical position of the point in the image, the second column 
-    # defines the horizonal position as in numpy notation
-    return np.hstack([projected_points[:,[1]], projected_points[:,[0]]])   
+    return projected_points #(x,y)   
 
 def json_read(filename):
     with open(filename) as f:    
         data = json.load(f)
     return data
         
-def json_write(data, filename):
+def json_write(filename, data):
     directory = os.path.dirname(os.path.abspath(filename))
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -60,7 +55,7 @@ def yaml_read(filename):
         data = yaml.load(f)
     return data
         
-def yaml_write(data, filename):
+def yaml_write(filename, data):
     directory = os.path.dirname(os.path.abspath(filename))
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -72,7 +67,7 @@ def pickle_read(filename):
         data = pickle.load(f)
     return data
         
-def pickle_write(data, filename):
+def pickle_write(filename, data):
     directory = os.path.dirname(os.path.abspath(filename))
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -225,6 +220,25 @@ def gaussian_blurring(image, sigma):
     blurred = cv2.GaussianBlur(image, (0, 0), sigma)
     return blurred
 
+def draw_points(image, centers, radius, color='r'): 
+    """ Draws filled point on the image
+    """
+    _image = image.copy()        
+    if color=='r':
+        color = [255,0,0]
+    elif color=='g':
+        color = [0,255,0]
+    elif color=='b':
+        color = [0,0,255]
+    elif color=='w':
+        color = [255,255,255]
+    elif color=='k':
+        color = [0,0,0]
+    
+    for point in centers:
+        _image = cv2.circle(_image, tuple(point.astype(np.int)), radius, color=color, thickness=-1)
+    return _image
+
 def dict_try_retrieve(json_data, key):
     try:
         return json_data[key]
@@ -247,11 +261,16 @@ def search_in_dict(dict, exact=None, groups=None):
                     return value
     return None
 
-def progress_bar(value, msg, max, notches=20):   
-    p=int(value//((max-1)/notches))    
-    print("|"+"|"*(p)+">"+"_"*(notches-p)+"|"+msg, end="\r", flush=True)
+def progress_bar(value, left_msg, right_msg, max, notches=20, end=False):
+    if end:
+        end="\r\n" 
+    else:
+        end="\r"
+    p=int(value//((max-1)/notches))        
     if p==notches:
-        print("|"*(p+2), end="\r", flush=True) 
+        print(left_msg+"|"*(p+2)+right_msg, end=end, flush=True) 
+    else:
+        print(left_msg+"|"+"|"*(p)+">"+"_"*(notches-p-1)+"|"+right_msg, end=end, flush=True)
         
 def scale_homography_left(H, scale):
     S = np.array([[scale, 0, 0], [0, scale, 0], [0,0,1]])
@@ -353,7 +372,7 @@ def _transform_points(projection, rotation, translation, points):
 # https://c4science.ch/source/posenet/browse/master/unet_utils.py
 # Pablo Marquez Neila 
 def _minimize_reprojection_error_LM(K, keypoints, gt_points,
-                                   init_w, init_t, eta=0.0, tol=1e-3, num_iters=50):
+                                   init_w, init_t, eta=0.0, tol=1e-3, num_iters=50, verbose=False):
 
     def to_torch(x):
         return Variable(torch.from_numpy(np.float32(x)))
@@ -392,8 +411,12 @@ def _minimize_reprojection_error_LM(K, keypoints, gt_points,
         t.data.add_(torch.from_numpy(step_wt[3:]))
 
         if np.linalg.norm(step_wt) < tol:
+            if verbose:
+                print("minimize_reprojection_error_LM -- Required tolerance reached.")
             break
 
+    if verbose:
+        print("minimize_reprojection_error_LM -- Maximum number of iterations reached.")
     return from_torch(w), from_torch(t)
 
 # https://c4science.ch/source/posenet/browse/master/unet_utils.py
@@ -417,7 +440,8 @@ def _visible_points_for_homography(homography, image_shape, points):
 
 # https://c4science.ch/source/posenet/browse/master/unet_utils.py
 # Pablo Marquez Neila 
-def homography_to_transformation(homography, K, model_points, image_shape):
+def homography_to_transformation(homography, K, model_points, image_shape, 
+                                 eta=0.0, tol=1e-3, num_iters=50, verbose=False):
 
     # Get an initial estimation of R and t.
     R, t = _decompose_homography(homography, K)
@@ -436,7 +460,10 @@ def homography_to_transformation(homography, K, model_points, image_shape):
                                                  visible_model_points,
                                                  visible_projected_points,
                                                  w, t,
-                                                 eta=0)
+                                                 eta,
+                                                 tol,
+                                                 num_iters,
+                                                 verbose)
 
     # Reconstruct the rotation matrix from the rotation vector.
     newR = rotvector_to_rotmatrix(neww)

@@ -10,7 +10,7 @@ import datetime
 this_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parent_dir = os.path.dirname(this_dir)
 sys.path.append(parent_dir)
-from pypom import utils
+from pypom import utils, camera
 
 def main(points_json="points.json",
          intrinsics_json="intrinsics.json",
@@ -29,7 +29,7 @@ def main(points_json="points.json",
     """
 
     # the image points are extracted from an undistorted image!
-    image_points, world_points, image_shape, unit, undistorted = utils.retrieve_image_and_world_points_from_json(points_json)
+    image_points, world_points, image_shape, unit, undistorted = camera.retrieve_image_and_world_points_from_json(points_json)
     
     assert(image_points is not None)
     assert(world_points is not None)
@@ -37,7 +37,7 @@ def main(points_json="points.json",
     assert(unit is not None and isinstance(unit, str))
     assert(undistorted is not None and isinstance(undistorted, bool))
     
-    K, dist, _ = utils.retrieve_intrinsics_from_json(intrinsics_json)
+    K, dist, _ = camera.retrieve_intrinsics_from_json(intrinsics_json)
     
     if not undistorted:
         image_points = cv2.undistortPoints(image_points[:,np.newaxis].astype(np.float32), K, dist)
@@ -64,8 +64,8 @@ def main(points_json="points.json",
     d_json = dict({"date":current_datetime, "description":description, 
                    "R":R.tolist(), "t":t.tolist(), "Hr":Hr.tolist(), "image_shape":image_shape.tolist(), "unit":unit})
               
-    utils.pickle_write(d_pickle, "extrinsics.pickle")
-    utils.json_write(d_json, "extrinsics.json")
+    utils.pickle_write("extrinsics.pickle", d_pickle)
+    utils.json_write("extrinsics.json", d_json)
 
 if __name__ == "__main__":
 

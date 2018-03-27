@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-""" Camera.
+""" Camera classes used for projecting points.
 """
 
 import os
@@ -108,6 +108,8 @@ def retrieve_image_and_world_points_from_json(filename):
     return np.float64(image_points), np.float64(world_points), np.float64(image_shape).ravel(), unit, undistorted
 
 class CameraKRt(object):
+    """Camera from K, R and t.
+    """ 
     def __init__(self, name, K, R, t, scale=1): 
         self.name = name
         self.K = K
@@ -152,6 +154,8 @@ class CameraKRt(object):
         return cls(name=name, K=K, R=R, t=t, scale=scale1)
 
 class CameraHbotHtop(object):
+    """Camera from bottom and top homography.
+    """
     def __init__(self, name, Hbottom, Htop, scale=1):
         self.name = name
         self.Hbottom = Hbottom
@@ -190,6 +194,9 @@ class CameraHbotHtop(object):
         return cls(name=name, Hbottom=Hbottom, Htop=Htop, scale=scale1)    
 
 class CameraHbotHeight(object):
+    """Camera from bottom homography and head-height line.
+    """
+
     # head_height is in pixels from the top of the image
     # p_head_height is a percentage 
     def __init__(self, Hbottom, head_height, scale=1):

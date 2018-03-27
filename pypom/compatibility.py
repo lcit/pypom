@@ -4,13 +4,12 @@ import os
 from . import pom
 from . import utils
 
-'''    
-def to_string(self):     
-    if self.visible:
-        return "RECTANGLE {self.cam} {self.idx} {self.xmin} {self.ymin} {self.xmax} {self.ymax}".format(self=self)
+    
+def compose_rectangle_line(cam, idx, visible, xmin=None, xmax=None, ymin=None, ymax=None):     
+    if visible:
+        return "RECTANGLE {cam} {idx} {xmin} {ymin} {xmax} {ymax}".format(cam=cam, idx=idx, ymin=ymin, ymax=ymax, xmin=xmin, xmax=xmax)
     else:
-        return "RECTANGLE {self.cam} {self.idx} notvisible".format(self=self)
-'''
+        return "RECTANGLE {cam} {idx} notvisible".format(cam=cam, idx=idx)
 
 def parse_rectangle_line(string):
     if "RECTANGLE" not in string:
@@ -142,10 +141,11 @@ class POM(object):
         
         text_file = open(filename, "w")
         text_file.write("ROOM {} {} {} {}\n\n".format(self.img_width, self.img_height, self.n_cams, self.n_poss))
-        for c in range(self.n_cams):
-            for i in range(self.n_poss):
-                rect = self.rectangles[c][i]
-                text_file.write(rect.to_string(self.img_width, self.img_height, self.p_rect_visible)+"\n")       
+        for cam in range(self.n_cams):
+            for idx in range(self.n_poss):
+                rect = self.rectangles[cam][idx]                
+                line = compose_rectangle_line(cam, idx, rect.visible, rect.xmin, rect.xmax, rect.ymin, rect.ymax)                
+                text_file.write(line+"\n")       
         text_file.write("\n")
         
         text_file.write("INPUT_VIEW_FORMAT {}\n\n".format(self.input_view_format))
