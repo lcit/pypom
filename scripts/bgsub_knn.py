@@ -54,7 +54,7 @@ def main(input_folder = ".",
     
     for i, filename in enumerate(filenames):
     
-        print("Processing image {}..".format(filename))
+        print("{} -- Processing image {}..".format(i, filename))
     
         img = utils.load_image(filename)
 
@@ -64,7 +64,7 @@ def main(input_folder = ".",
         pred = cv2.morphologyEx(pred, cv2.MORPH_OPEN, kernel)  
         pred = np.uint8((pred==255)*255) # this removes the shadow
         
-        utils.save_image(os.path.join(output_folder, "bg_{}.png".format(i)), pred)    
+        utils.save_image(os.path.join(output_folder, "bg_{}.jpg".format(i)), pred)    
     
 if __name__ == "__main__":
 

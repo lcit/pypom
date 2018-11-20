@@ -7,7 +7,8 @@ from matplotlib.path import Path
 import cv2
 import numpy as np
 import time
-import utils
+from . import utils
+
 
 __author__ = "Leonardo Citraro"
 __email__ = "leonardo.citraro@epfl.ch" 
@@ -48,9 +49,9 @@ class Room(object):
         self.origin_y = origin_y
         self.origin_z = origin_z
         
-        self.n_height = self.height//self.step_y
-        self.n_width = self.width//self.step_x
-        self.n_positions = self.n_height*self.n_width
+        self.n_height = int(self.height//self.step_y)
+        self.n_width = int(self.width//self.step_x)
+        self.n_positions = int(self.n_height*self.n_width)
     
     def world_grid(self):
         """Compute the grid of locations in world coordinate.

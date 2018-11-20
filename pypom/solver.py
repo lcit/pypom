@@ -7,8 +7,8 @@ from matplotlib.path import Path
 import cv2
 import numpy as np
 import time
-import utils
-import core
+from . import utils
+from . import core
 
 __author__ = "Leonardo Citraro"
 __email__ = "leonardo.citraro@epfl.ch" 
