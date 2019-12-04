@@ -63,7 +63,9 @@ def main(input_folder = ".",
         
         pred = np.uint8((pred>threshold)*255)
         
-        utils.save_image(os.path.join(output_folder, "bg_{}.png".format(i)), pred)    
+        root, extension = os.path.splitext(os.path.basename(filename))
+        
+        utils.save_image(os.path.join(output_folder, "bg_{}.jpg".format(root)), pred)     
     
 if __name__ == "__main__":
 

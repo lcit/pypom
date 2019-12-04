@@ -64,16 +64,18 @@ def main(input_folder = ".",
         pred = cv2.morphologyEx(pred, cv2.MORPH_OPEN, kernel)    
         pred = np.uint8((pred==255)*255) # this removes the shadow
         
-        utils.save_image(os.path.join(output_folder, "bg_{}.png".format(i)), pred)    
+        root, extension = os.path.splitext(os.path.basename(filename))
+        
+        utils.save_image(os.path.join(output_folder, "bg_{}.jpg".format(root)), pred)     
     
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_folder", "-i", type=str, required=True)
     parser.add_argument("--output_folder", "-o", type=str, required=True)
-    parser.add_argument("--sigma", "-s", type=float, default=1.0, required=False)
-    parser.add_argument("--history", "-y", type=int, default=500, required=False)
-    parser.add_argument("--varThreshold", "-t", type=int, default=16, required=False)
+    parser.add_argument("--sigma", "-s", type=float, default=1.0, required=False, help='smoothing default=1')
+    parser.add_argument("--history", "-y", type=int, default=500, required=False, help='default=500')
+    parser.add_argument("--varThreshold", "-t", type=int, default=16, required=False, help='sensitivity default=16')
 
     args = parser.parse_args()
     main(**vars(args)) 

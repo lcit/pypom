@@ -13,11 +13,47 @@ import yaml
 import pickle
 import torch
 import shutil
+import multiprocessing
+import itertools
 from torch.autograd import Variable
 from scipy.linalg import logm, expm
 
 __author__ = "Leonardo Citraro"
 __email__ = "leonardo.citraro@epfl.ch"
+
+class Parallel(object):
+    
+    def __init__(self, threads=8):
+        self.threads = threads
+        self.p = multiprocessing.Pool(threads)
+        
+    def __call__(self, f, iterable, *arg):
+        
+        if len(arg):
+            res = self.p.starmap(f, itertools.product(iterable, *[[x] for x in arg]))
+        else:
+            res = self.p.map(f, iterable)
+
+        self.p.close()
+        self.p.join()
+        return res
+    
+    @staticmethod
+    def split_iterable(iterable, n):
+        
+        if isinstance(iterable, (list,tuple)):
+            s = len(iterable)//n
+            return [iterable[i:i + s] for i in range(0, len(iterable), s)]
+        elif isinstance(iterable, np.ndarray):
+            return np.array_split(iterable, n)
+        
+    @staticmethod
+    def join_iterable(iterable):
+        
+        if isinstance(iterable, (list,tuple)):
+            return list(itertools.chain.from_iterable(iterable))
+        elif isinstance(iterable, np.ndarray):
+            return np.concatenate(iterable)      
 
 def transform_points(H, points):
     # convertPointsFromHomogeneous has some problem when dealing with non float values!

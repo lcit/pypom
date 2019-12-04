@@ -77,7 +77,9 @@ def main(input_folder = ".",
         pred = model.apply(img)
         pred = cv2.morphologyEx(pred, cv2.MORPH_OPEN, kernel)  
         
-        utils.save_image(os.path.join(output_folder, "bg_{}.png".format(i)), pred)    
+        root, extension = os.path.splitext(os.path.basename(filename))
+        
+        utils.save_image(os.path.join(output_folder, "bg_{}.jpg".format(root)), pred)     
     
 if __name__ == "__main__":
 

@@ -5,6 +5,7 @@
 import os
 from matplotlib.path import Path
 import cv2
+os.environ["OMP_NUM_THREADS"] = "1"
 import numpy as np
 import time
 from . import utils
@@ -35,32 +36,28 @@ class Solver(object):
     tol : float
         Error to reach in order to stop the optimization loop earlier.
     """
-    def __init__(self, data_loader, prior=1e-8, sigma=0.001, step=0.9, max_iter=100, tol=1e-6):
-        self.data_loader = data_loader
+    def __init__(self, rectangles, prior=1e-8, sigma=0.001, step=0.9, max_iter=100, tol=1e-6):
+        self.rectangles = rectangles
         self.prior = prior
         self.max_iter = max_iter
         self.sigma = sigma
         self.step = step
         self.tol = tol
         
-        self.n_cams = self.data_loader.n_cams
-        self.n_positions = self.data_loader.n_positions
+        self.n_cams = len(self.rectangles)
+        self.n_positions = len(self.rectangles[0])
         
         e = np.full(self.n_positions, self.prior, np.float32)
         self.exp_lambda = (1-e)/e
 
-        self.rectangles = []
-        self._rectangles = []
-        for d in self.data_loader:
-            rectangles = d["rectangles"]
-            self.rectangles.append(rectangles)
-            self._rectangles.append(self.transform_rectangles(rectangles)) 
+        self._rectangles = [self.transform_rectangles_for_c_code(rectangles_view) 
+                               for rectangles_view in self.rectangles]
             
     def generate_prior(self):
         return  np.full(self.n_positions, self.prior, np.float32)
 
     @staticmethod
-    def transform_rectangles(rectangles):
+    def transform_rectangles_for_c_code(rectangles):
         """ Transforms the list of Rectangle objects into the format required by
             the C++ implementation.
 
@@ -86,7 +83,7 @@ class Solver(object):
                 _rectangles += [-1,-1,-1,-1]
         return np.int32(_rectangles)         
         
-    def run(self, idx, q=None, verbose=True, debug=False):
+    def run(self, idx, B, q=None, verbose=True, debug=False):
         """ Solve for a specific set of images.
 
         Parameters
@@ -108,9 +105,7 @@ class Solver(object):
         start = time.time()
 
         if q is None:
-            q = self.generate_prior()
-            
-        B = self.data_loader.load_bgs(idx)       
+            q = self.generate_prior()       
         
         view_shape = B[0].shape[:2]
         n_stab = 0
@@ -170,7 +165,7 @@ class Solver(object):
                 if n_stab > 5:
                     if verbose:                        
                         utils.progress_bar(i, left_msg="[Solver]::Idx {:04d} ".format(idx), 
-                                           right_msg=" [{:0.2f}s] Solved at iteration: {}".format(time.time()-start, i), 
+                                           right_msg=" [{:0.2f}s] Solved at iteration: {} (diff={:0.2E}<tol)".format(time.time()-start, i, diff), 
                                            max=self.max_iter-1, end=True)
                     return qs
             else:
@@ -179,7 +174,7 @@ class Solver(object):
             q = q_new
                 
         utils.progress_bar(i, left_msg="[Solver]::Idx {:04d} ".format(idx), 
-                           right_msg=" [{:0.2f}s] Max iteration reached.".format(time.time()-start, i), 
+                           right_msg=" [{:0.2f}s] Max iteration reached. (diff={:0.2E}>tol)".format(time.time()-start, i, diff), 
                            max=self.max_iter-1, end=True)
         return qs       
 
