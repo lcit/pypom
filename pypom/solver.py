@@ -17,12 +17,12 @@ Y_AXIS = 1
 Z_AXIS = 2
 
 class Solver(object):
-    """Pom solver.
+    """Pom solver
 
     Parameters
     ----------
-    data_loader : DataLoader
-        Object in charge of loading images and rectangles
+    rectangles : list of lists of object of type Rectangle
+        Rectangles for each view
     prior : float
         Prior probability of presence
     sigma : float
