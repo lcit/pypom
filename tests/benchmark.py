@@ -8,7 +8,6 @@ import numpy as np
 import sys
 import math
 import time
-sys.path.append("../")
 from pypom import camera
 from pypom import pom
 import numpy as np

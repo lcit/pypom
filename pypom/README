@@ -1,8 +1,0 @@
-sudo find / -name "libboost_python*"
-
-/usr/lib/x86_64-linux-gnu/libboost_python.so
-/usr/lib/x86_64-linux-gnu/libboost_python-py35.so
-/usr/lib/x86_64-linux-gnu/libboost_python-py35.so.1.58.0
-/usr/lib/x86_64-linux-gnu/libboost_python-py35.a
-
-sudo ln -s /usr/lib/x86_64-linux-gnu/libboost_python-py35.so /usr/lib/x86_64-linux-gnu/libboost_python3.so

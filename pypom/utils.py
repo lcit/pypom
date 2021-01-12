@@ -11,15 +11,12 @@ import re
 import json
 import yaml
 import pickle
-import torch
 import shutil
 import multiprocessing
 import itertools
-from torch.autograd import Variable
 from scipy.linalg import logm, expm
 
 __author__ = "Leonardo Citraro"
-__email__ = "leonardo.citraro@epfl.ch"
 
 class Parallel(object):
     
@@ -142,7 +139,7 @@ def find_images(file_or_folder, hint=None):
 
 def undistort(img, K, distCoeffs):   
     h, w = img.shape[:2]    
-    newcameramtx, roi = cv2.getOptimalNewCameraMatrix(K, distCoeffs, (w, h), 0.0, (w, h), centerPrincipalPoint=True)    
+    newcameramtx, roi = cv2.getOptimalNewCameraMatrix(K, distCoeffs, (w, h), 1.0, (w, h), centerPrincipalPoint=True)    
     dst = cv2.undistort(img, K, distCoeffs, None, newcameramtx)
 
     x,y,w,h = roi
@@ -354,162 +351,3 @@ unit_conversion  =  {"cm":{"cm":lambda x: x,
 
 def value_unit_conversion(value, in_unit="cm", out_unit="cm"):
     return unit_conversion[in_unit][out_unit](value)
-
-# https://c4science.ch/source/posenet/browse/master/unet_utils.py
-# Pablo Marquez Neila 
-def _decompose_homography(homography, K=np.eye(3)):
-    M = np.dot(np.linalg.inv(K), homography)
-
-    M /= M[2, 2]
-
-    scale = (np.linalg.norm(M[:, 0]) + np.linalg.norm(M[:, 1])) / 2
-    M2 = M / scale
-    r3 = np.cross(M2[:, 0], M2[:, 1])
-    R = np.array([M2[:, 0], M2[:, 1], r3]).T
-    t = M2[:, 2]
-
-    # Orthogonalize R
-    U, D, V = np.linalg.svd(R)
-    R = np.dot(U, V)
-
-    return R, t
-
-# https://c4science.ch/source/posenet/browse/master/unet_utils.py
-# Pablo Marquez Neila 
-def _rodrigues(w):
-    """A PyTorch implementation of the Rodrigues formula."""
-
-    theta = torch.sqrt(torch.sum(w ** 2))
-    sin_theta = torch.sin(theta)
-    cos_theta = torch.cos(theta)
-
-    a, b, c = w[0] / theta, w[1] / theta, w[2] / theta
-
-    zero = Variable(torch.Tensor([0]))
-    zero.requires_grad = False
-
-    K = torch.stack([torch.cat([zero, -c, b]),
-                     torch.cat([c, zero, -a]),
-                     torch.cat([-b, a, zero])], dim=0)
-
-    eye = Variable(torch.eye(3))
-    eye.requires_grad = True
-
-    return eye + sin_theta * K + (1 - cos_theta) * torch.matmul(K, K)
-
-# https://c4science.ch/source/posenet/browse/master/unet_utils.py
-# Pablo Marquez Neila 
-def _transform_points(projection, rotation, translation, points):
-    R = _rodrigues(rotation)
-    transformed_points = torch.matmul(points, R.t()) + translation
-    proj = torch.matmul(transformed_points, projection.t())
-    return torch.stack([proj[:, 0] / proj[:, 2], proj[:, 1] / proj[:, 2]], dim=1)
-
-# https://c4science.ch/source/posenet/browse/master/unet_utils.py
-# Pablo Marquez Neila 
-def _minimize_reprojection_error_LM(K, keypoints, gt_points,
-                                   init_w, init_t, eta=0.0, tol=1e-3, num_iters=50, verbose=False):
-
-    def to_torch(x):
-        return Variable(torch.from_numpy(np.float32(x)))
-
-    def from_torch(x):
-        return x.data.cpu().numpy()
-
-    projection = to_torch(K)
-    points = to_torch(keypoints)
-    gt_points = to_torch(gt_points)
-    w = to_torch(init_w)
-    t = to_torch(init_t)
-    w.requires_grad = True
-    t.requires_grad = True
-
-    for i in range(num_iters):
-
-        proj_points = _transform_points(projection, w, t, points)
-        residuals = (proj_points - gt_points).view(-1)
-
-        J = []
-        for i in range(residuals.size(0)):
-            aux = np.zeros(residuals.size(0))
-            aux[i] = 1
-            J_i = torch.autograd.grad([residuals], [w, t], to_torch(aux), retain_graph=True)
-            J.append(torch.cat(J_i))
-
-        J = torch.stack(J)
-        Jr = torch.matmul(J.t(), residuals)
-        JJ_eta = torch.matmul(J.t(), J) + eta * Variable(torch.eye(6))
-
-        # TODO: Is it possible to solve this in PyTorch?
-        step_wt = np.linalg.solve(from_torch(JJ_eta), -from_torch(Jr))
-
-        w.data.add_(torch.from_numpy(step_wt[:3]))
-        t.data.add_(torch.from_numpy(step_wt[3:]))
-
-        if np.linalg.norm(step_wt) < tol:
-            if verbose:
-                print("minimize_reprojection_error_LM -- Required tolerance reached.")
-            break
-
-    if verbose:
-        print("minimize_reprojection_error_LM -- Maximum number of iterations reached.")
-    return from_torch(w), from_torch(t)
-
-# https://c4science.ch/source/posenet/browse/master/unet_utils.py
-# Pablo Marquez Neila 
-def _visible_points_for_homography(homography, image_shape, points):
-    """
-    Determine the subset of points from `points` that are visible in an image after
-    a homography transformation.
-
-    Returns the set of visible points both in the original frame of reference
-    and after the homography transformation.
-    """
-    proj_points = transform_points(homography, points[:, :2])
-    mask = np.ones(len(proj_points))
-    mask = np.logical_and(mask, proj_points[:, 0] >= 0)
-    mask = np.logical_and(mask, proj_points[:, 1] >= 0)
-    mask = np.logical_and(mask, proj_points[:, 0] < image_shape[1])
-    mask = np.logical_and(mask, proj_points[:, 1] < image_shape[0])
-
-    return points[mask], proj_points[mask]
-
-# https://c4science.ch/source/posenet/browse/master/unet_utils.py
-# Pablo Marquez Neila 
-def homography_to_transformation(homography, K, model_points, image_shape, 
-                                 eta=0.0, tol=1e-3, num_iters=50, verbose=False):
-
-    # Get an initial estimation of R and t.
-    R, t = _decompose_homography(homography, K)
-
-    # Compute the rotation vector
-    w = rotmatrix_to_rotvector(R)
-
-    # For the minimization of the reprojection error, we use only the points
-    # of the model that are visible in the image.
-    visible_model_points, visible_projected_points = _visible_points_for_homography(homography,
-                                                                                    image_shape,
-                                                                                    model_points)
-
-    # Fine-tune rotation and translation to minimize the reprojection error
-    neww, newt = _minimize_reprojection_error_LM(K,
-                                                 visible_model_points,
-                                                 visible_projected_points,
-                                                 w, t,
-                                                 eta,
-                                                 tol,
-                                                 num_iters,
-                                                 verbose)
-
-    # Reconstruct the rotation matrix from the rotation vector.
-    newR = rotvector_to_rotmatrix(neww)
-
-    return newR, newt
-
-
-
-
-
-
-
-

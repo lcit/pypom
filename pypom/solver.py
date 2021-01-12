@@ -4,15 +4,13 @@
 
 import os
 from matplotlib.path import Path
-import cv2
 os.environ["OMP_NUM_THREADS"] = "1"
 import numpy as np
 import time
 from . import utils
 from . import core
 
-__author__ = "Leonardo Citraro"
-__email__ = "leonardo.citraro@epfl.ch" 
+__author__ = "Leonardo Citraro" 
 
 X_AXIS = 0
 Y_AXIS = 1
@@ -110,15 +108,16 @@ class Solver(object):
         view_shape = B[0].shape[:2]
         n_stab = 0
         qs = []
-        
+        diff = -1
+        '''
         if debug:
             for c in range(self.n_cams):
                 utils.rmdir("./c{}/A".format(c))
                 utils.mkdir("./c{}/A".format(c))   
-        
+        '''
         for i in range(self.max_iter):  
              
-            utils.progress_bar(i, left_msg="[Solver]::Idx {:04d} ".format(idx), 
+            utils.progress_bar(i, left_msg="[Solver]::Idx {:04d} (diff={:0.2E}<tol) ".format(idx, diff), 
                                right_msg=" Iteration:{}".format(i), 
                                max=self.max_iter-1)
             
@@ -164,7 +163,7 @@ class Solver(object):
                 n_stab += 1
                 if n_stab > 5:
                     if verbose:                        
-                        utils.progress_bar(i, left_msg="[Solver]::Idx {:04d} ".format(idx), 
+                        utils.progress_bar(i, left_msg="[Solver]::Idx {:04d} (diff={:0.2E}<tol) ".format(idx, diff), 
                                            right_msg=" [{:0.2f}s] Solved at iteration: {} (diff={:0.2E}<tol)".format(time.time()-start, i, diff), 
                                            max=self.max_iter-1, end=True)
                     return qs
@@ -173,7 +172,7 @@ class Solver(object):
        
             q = q_new
                 
-        utils.progress_bar(i, left_msg="[Solver]::Idx {:04d} ".format(idx), 
+        utils.progress_bar(i, left_msg="[Solver]::Idx {:04d} (diff={:0.2E}<tol) ".format(idx, diff), 
                            right_msg=" [{:0.2f}s] Max iteration reached. (diff={:0.2E}>tol)".format(time.time()-start, i, diff), 
                            max=self.max_iter-1, end=True)
         return qs       

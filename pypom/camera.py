@@ -4,7 +4,6 @@
 
 import os
 from matplotlib.path import Path
-import cv2
 import numpy as np
 import numbers
 from . import utils
@@ -248,7 +247,8 @@ class CameraHbotHeight(object):
         want to project points on an image of size (270,480) the scaling factor 
         should be 4.0.
     """ 
-    def __init__(self, Hbottom, head_height, scale=1):
+    def __init__(self, name, Hbottom, head_height, scale=1):
+        self.name = name
         self.Hbottom = Hbottom
         self.head_height = head_height
         self.scale = scale
@@ -261,7 +261,7 @@ class CameraHbotHeight(object):
     
     def project_top_points(self, world_points):
         points = self.project_bottom_points(world_points)
-        return np.hstack([np.ones((points.shape[0],1))*self.head_height, points[:,[1]]])
+        return np.hstack([np.ones((points.shape[0],1))*self.head_height, points[:,[0]] ])
 
     @classmethod
     def from_json(cls, name, homographies_json, view_shape, unit="m", invert=False):

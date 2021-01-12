@@ -3,6 +3,8 @@ import sys
 import os
 from . import pom
 from . import utils
+
+__author__ = "Leonardo Citraro" 
     
 def compose_rectangle_line(cam, idx, visible, xmin=None, xmax=None, ymin=None, ymax=None):  
     
@@ -199,4 +201,4 @@ class POM(object):
                        self.input_view_format, self.result_view_format,
                        self.result_format, self.convergence_view_format, 
                        self.prior, self.sigma_image_density, self.max_nb_solver_iterations, 
-                       self.proba_ignored, self.idx_start, self.process, self.p_rect_visible)  
+                       self.proba_ignored, self.idx_start, self.process)        

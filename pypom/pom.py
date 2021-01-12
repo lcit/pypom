@@ -4,15 +4,12 @@
 
 import os
 from matplotlib.path import Path
-import cv2
 import numpy as np
 import time
 import itertools
 from . import utils
 
-
 __author__ = "Leonardo Citraro"
-__email__ = "leonardo.citraro@epfl.ch" 
 
 X_AXIS = 0
 Y_AXIS = 1
@@ -81,6 +78,8 @@ class Room(object):
 
         if isinstance(ID, (list,tuple,np.ndarray)):
             return list(_f(id) for id in ID)
+        else:
+            return _f(ID)        
     
     def from_ID_to_position(self, ID):
         
@@ -91,6 +90,8 @@ class Room(object):
         
         if isinstance(ID, (list,tuple,np.ndarray)):
             return list(_f(id) for id in ID)
+        else:
+            return _f(ID)
     
     def from_position_to_ID(self, position):
         
@@ -98,10 +99,12 @@ class Room(object):
             n_cells_x = np.ceil((pos[0]-self.origin_x)/self.step_x)
             n_cells_y = np.ceil((pos[1]-self.origin_y)/self.step_y)
 
-            return n_cells_y*self.n_width+n_cells_x
+            return int(n_cells_y*self.n_width+n_cells_x)
         
         if isinstance(position[0], (list,tuple,np.ndarray)):
-            return list(_f(pos) for id in position)      
+            return list(_f(pos) for id in position) 
+        else:
+            return _f(position)       
     
 def percentage_intersection(rectangle, image_height, image_width):
     """Compute percentage of intersection of a rectangle in an image.
@@ -262,7 +265,7 @@ class Rectangle(object):
         image = load_image(...)
         image[rectangle.slices()] = 0
         """
-        return (slice(self.ymin, self.ymax), slice(self.xmin, self.xmax))
+        return (slice(int(self.ymin), int(self.ymax)), slice(int(self.xmin), int(self.xmax)))
     
 def project_cilinder(cilinder, camera):
     """Projects the cilinder into the image plane. The output is a rectangle.
@@ -413,71 +416,3 @@ def generate_rectangles(world_grid, camera, man_ray, man_height, view_shape,
         print("[{}]::Generated rectangles: {}.".format(camera.name, len(rectangles)))
         
     return rectangles
-
-class DataLoader(list):
-    """Class used to store the rectangles and to retrieve the images.
-
-    Parameters
-    ----------
-    bg_threshold : int or float (optional)
-        Threshold applied to the background subtraction images when loaded.
-        This is used if the background subtraction images are grayscale instead of booleans.
-    """ 
-    def __init__(self, bg_threshold=128):
-        self.bg_threshold = bg_threshold
-    
-    def add_view(self, name, rectangles, path_bgs, path_imgs=None):
-        """ Adds data and paths relative to a view.
-
-        Parameters
-        ----------
-        name : string
-            Identifier/name for the view or the camera
-        rectangles : list of Rectangle objects
-            List of Rectangle objects [rect1, rect2, ...]. 
-            Make sure the argument Rectangle.visible is set correctly.
-        path_bgs : string
-            Path to backgroud subtraction images. The path has to be "formattable"
-            in order to select the images at time t.
-            i.e. ".../cam0/bg/frame_{}.png"
-        path_images : string (optional)
-            Path to images. The path has to be "formattable"
-            in order to select the images at time t.
-            i.e. ".../cam0/images/frame_{}.jpg"
-        """ 
-        self.append({"name":name, "rectangles":rectangles, 
-                     "path_bgs":path_bgs, "path_imgs":path_imgs})
-    
-    @property    
-    def n_cams(self):
-        return len(self)
-    
-    @property    
-    def n_positions(self):
-        return len(self[0]["rectangles"]) 
-    
-    def load_bg(self, view_idx, idx):
-        image = utils.load_image(self[view_idx]["path_bgs"].format(idx))
-        if image.dtype == np.dtype('bool'):
-            image = np.float32(image*1.0)
-        else:
-            image = np.float32((image>self.bg_threshold)*1.0)                
-        return image
-            
-    def load_bgs(self, idx):
-        B = [self.load_bg(view_idx, idx) for view_idx in range(len(self))]
-        return B
-
-    def load_image(self, view_idx, idx):
-        if self["path_imgs"] is None:
-            return None       
-        return utils.load_image(self["path_imgs"].format(idx))
-    
-    def load_images(self, idx):
-        imgs = []
-        for d in self:
-            if d["path_imgs"] is not None:
-                imgs.append(utils.load_image(d["path_imgs"].format(idx)))
-            else:
-                imgs.append(None)
-        return imgs   
