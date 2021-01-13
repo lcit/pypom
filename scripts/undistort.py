@@ -5,13 +5,9 @@ import argparse
 import sys
 import inspect
 
-this_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parent_dir = os.path.dirname(this_dir)
-sys.path.append(parent_dir)
 from pypom import utils
 
 __author__ = "Leonardo Citraro"
-__email__ = "leonardo.citraro@epfl.ch"
 
 def main(input_folder="",
         output_folder="",
@@ -35,7 +31,7 @@ def main(input_folder="",
         img = utils.load_image(filename)
         h, w = img.shape[:2]
         
-        newcameramtx, roi = cv2.getOptimalNewCameraMatrix(K, dist, (w, h), 0.0, (w, h), centerPrincipalPoint=True)
+        newcameramtx, roi = cv2.getOptimalNewCameraMatrix(K, dist, (w, h), 0.5, (w, h), centerPrincipalPoint=True)
         
         print("Processing image {} -  roi={}".format(os.path.basename(filename), roi))
 

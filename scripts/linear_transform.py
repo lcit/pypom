@@ -6,10 +6,9 @@ import sys
 import inspect
 import numpy as np
 
-this_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parent_dir = os.path.dirname(this_dir)
-sys.path.append(parent_dir)
 from pypom import utils
+
+__author__ = "Leonardo Citraro"
 
 def main(input_folder="",
          output_folder="",

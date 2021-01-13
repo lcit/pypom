@@ -5,10 +5,9 @@ import os
 import sys
 import inspect
 
-this_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parent_dir = os.path.dirname(this_dir)
-sys.path.append(parent_dir)
 from pypom import utils
+
+__author__ = "Leonardo Citraro"
 
 def main(filename="example.avi",
          start=0,
@@ -32,8 +31,8 @@ def main(filename="example.avi",
         how many frames to skip at each iteration
     out: str
         folder where to save the frames
-	downsampling: int
-		downsampling factor
+    downsampling: int
+        downsampling factor
 
     Example
     ----------
