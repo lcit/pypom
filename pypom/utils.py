@@ -64,12 +64,8 @@ def transform_points(H, points):
     return projected_points #(x,y)
 
 def project_KRt(world_points, R, t, K, dist=None):
-    homogeneous = np.dot(K, (np.dot(R, world_points.T) + t.reshape(3,1))).T
-    projected_points = homogeneous[:,:2] / homogeneous[:,[2]]  
-    if dist is not None:
-        projected_points = cv2.undistortPoints(projected_points[:,np.newaxis].astype(np.float32), K, dist) 
-
-    return projected_points #(x,y)   
+    rvec = cv2.Rodrigues(R)[0]
+    return cv2.projectPoints(world_points, rvec, t, K, None)[0].reshape(-1,2) 
 
 def json_read(filename):
     with open(filename) as f:    

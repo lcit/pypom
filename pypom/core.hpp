@@ -146,11 +146,6 @@ scalar_t* const compute_A_(const int H, const int W, const int n_positions,
         
         // case when the rectangle is visible
         if(ymin>-1){
-            // we make sure to not go outside the image
-            ymin = clip(ymin, 0, H);
-            ymax = clip(ymax, 0, H);
-            xmin = clip(xmin, 0, W);
-            xmax = clip(xmax, 0, W);
 
             proba_absence = 1.0 - *q;
             
@@ -199,6 +194,7 @@ scalar_t* const integral_image(const scalar_t* image, const int H, const int W){
             image++;
         }    
     }
+    
     return integral;
 }
 
@@ -305,11 +301,6 @@ scalar_t* const compute_psi_diff(const int H, const int W, const scalar_t* Ai, c
             // the case when the rectangle is not visible
             psi_diff[k] = 0;       
         }else{
-            // we make sure to not go outside the image
-            ymin = clip(ymin, 0, H);
-            ymax = clip(ymax, 0, H);
-            xmin = clip(xmin, 0, W);
-            xmax = clip(xmax, 0, W);
 
             alpha = -q[k]/(1-q[k]);
             

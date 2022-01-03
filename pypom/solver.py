@@ -7,6 +7,7 @@ from matplotlib.path import Path
 os.environ["OMP_NUM_THREADS"] = "1"
 import numpy as np
 import time
+import copy
 from . import utils
 from . import core
 
@@ -76,10 +77,30 @@ class Solver(object):
         _rectangles = []
         for k, r in enumerate(rectangles):
             if r.visible:
+                
                 _rectangles += [r.ymin,r.ymax,r.xmin,r.xmax]
             else:
                 _rectangles += [-1,-1,-1,-1]
-        return np.int32(_rectangles)         
+                
+        return np.int32(_rectangles)    
+    
+    def check(self, B, q=None):
+        view_shape = B[0].shape[:2]
+        assert self.n_cams==len(self._rectangles)
+        for r in self._rectangles:
+            assert self.n_positions==(len(r)//4)
+        if q is not None:
+            assert len(q)==self.n_positions
+        rs = np.array(self._rectangles).reshape(-1,4)
+        xmax, ymax = rs[:,[3,1]].max(axis=0)
+        rs_min = rs[:,[2,0]]
+        xmin, ymin = rs_min[rs_min[:,0]!=-1].min(axis=0)
+        if xmax>=view_shape[1] or ymax>=view_shape[0]:
+            raise ValueError("Rectangles go outside the image! image_shape:{} xmax:{} ymax:{}".format(view_shape, xmax, ymax))
+        if xmin<0 or ymin<0:
+            raise ValueError("Rectangles go outside the image! image_shape:{} xmin:{} ymin:{}".format(view_shape, xmin, ymin)) 
+            
+        print("Sanity check all good!")
         
     def run(self, idx, B, q=None, verbose=True, debug=False):
         """ Solve for a specific set of images.
@@ -122,18 +143,18 @@ class Solver(object):
                                max=self.max_iter-1)
             
             psi_diff = np.zeros((self.n_cams, self.n_positions), np.float32)
-                    
+            
             for c in range(self.n_cams): 
+                
                 # Equation (31) 
-                A_ = core.compute_A_(view_shape, self._rectangles[c], q) # x(1-qkAk) = (1-A)                             
+                A_ = core.compute_A_(view_shape, self._rectangles[c], q)
                 A = 1-A_ # 1-x(1-qkAk)
-
+                
                 # Integral image (1-A)
                 Ai = core.integral_image(A_)
 
                 # Integral image Bx(1-A)
                 BAi = core.integral_image(A_*B[c]) # Bx(1-A)
-                #BAi[c] = core.integral_image_mask(A_, B[c])
                 
                 # numpy.sum() is faster than my implementation of the sum in C++
                 # this is the reason the solver is implemented in the Python side.
@@ -148,7 +169,7 @@ class Solver(object):
                     points = np.array([(np.mean([r.xmax, r.xmin]), r.ymax) for r in self.rectangles[c] if r.visible])
                     image = np.uint8(255*np.dstack([A, B[c], B[c]/3.0]))
                     image = utils.draw_points(image, points, 1, 'w')
-                    utils.save_image("./c{}/A/A_{}_{}.JPG".format(c,idx,i), image)         
+                    utils.save_image("./c{}/A/A_{}_{}.JPG".format(c,idx,i), image)  
             
             # we clamp the difference of distances in order to avoid exp() overflows
             psi1_psi0 = np.minimum(1/self.sigma*psi_diff.sum(0), 30)
@@ -175,132 +196,4 @@ class Solver(object):
         utils.progress_bar(i, left_msg="[Solver]::Idx {:04d} (diff={:0.2E}<tol) ".format(idx, diff), 
                            right_msg=" [{:0.2f}s] Max iteration reached. (diff={:0.2E}>tol)".format(time.time()-start, i, diff), 
                            max=self.max_iter-1, end=True)
-        return qs       
-
-#def integral_array(a):
-#    S = a
-#    for i in range(a.ndim):
-#        S = S.cumsum(axis=i)
-#    return S
-#
-#def integral_sum(a):
-#    return a[-1,-1]+a[0,0]-a[-1,0]-a[0,-1]
-#        
-#def run(B, rectangles, q, lambd, prior=0.001, iterations=100, sigma=0.01, step=0.8, eps=1e-12, debug=False):
-#    
-#    n_stab = 0
-#    n_positions = room.n_positions
-#    n_cams = len(rectangles)
-#    print(n_cams, n_positions)
-#    H = B[0].shape[0]
-#    W = B[0].shape[1]
-#    
-#    
-#    if debug:
-#        for c in range(n_cams):
-#            utils.rmdir("./c{}/A".format(c))
-#            utils.mkdir("./c{}/A".format(c))  
-#    
-#    for i in range(iterations):  
-#        
-#        if i%10==0:
-#            print("Iteration: ",i)
-#        
-#        A = np.ones((n_cams,)+view_shape, type_t)
-#        Ai = np.ones((n_cams,)+view_shape, type_t)
-#        BAi = np.ones((n_cams,)+view_shape, type_t)
-#        
-#        for c, rs in enumerate(rectangles):
-#            '''
-#            A_ = np.ones(view_shape, type_t)
-#            for k in range(n_positions):   
-#                #if r.visible:
-#                ymin = rs[(k*4)+0]
-#                ymax = rs[(k*4)+1]
-#                xmin = rs[(k*4)+2]
-#                xmax = rs[(k*4)+3]
-#                if ymin != -1:                    
-#                    ymin = np.maximum(ymin, 0)
-#                    ymax = np.minimum(ymax, H)
-#                    xmin = np.maximum(xmin, 0)
-#                    xmax = np.minimum(xmax, W)
-#                    A_[ymin:ymax, xmin:xmax] *= 1-q[k]
-#            
-#            '''
-#            A_ = pom_core.compute_A_(view_shape, rs, q)
-#             
-#            
-#            A[c] = 1-A_ # 1-xk(1-qkAk)
-#            Ai[c] = pom_core.integral_image(A_) # (1-A)
-#            BAi[c] = pom_core.integral_image(A_*B[c]) # Bx(1-A)
-#            '''
-#            
-#            A[c] = 1-A_ # 1-xk(1-qkAk)
-#            Ai[c] = integral_array(A_) # (1-A)
-#            BAi[c] = integral_array(B[c]*A_) # Bx(1-A)
-#            '''
-#            if debug:
-#                utils.save_image("./c{}/A/A{}.JPG".format(c,i), np.dstack([A[c], B[c], B[c]]))
-#            
-#        lAl = [np.sum(A[c]) for c in range(n_cams)]
-#        lBxAl = [np.sum(B[c]*A[c]) for c in range(n_cams)]
-#        lBl = [np.sum(B[c]) for c in range(n_cams)]
-#
-#        psi0 = np.zeros((n_cams, n_positions), type_t)
-#        psi1 = np.zeros((n_cams, n_positions), type_t) 
-#         
-#        for c, rs in enumerate(rectangles):
-#            (p0,p1) = pom_core.compute_psi(Ai[c], BAi[c], lAl[c], lBxAl[c], lBl[c], rs, q) 
-#            psi0[c] = p0  
-#            psi1[c] = p1          
-#        '''
-#        for c,rs in enumerate(rectangles):
-#            for k in range(n_positions):   
-#                #if r.visible:
-#                ymin = rs[(k*4)+0]
-#                ymax = rs[(k*4)+1]
-#                xmin = rs[(k*4)+2]
-#                xmax = rs[(k*4)+3]
-#                if ymin != -1:                    
-#                    ymin = np.maximum(ymin, 0)
-#                    ymax = np.minimum(ymax, H)
-#                    xmin = np.maximum(xmin, 0)
-#                    xmax = np.minimum(xmax, W)
-#                    
-#                    #l1_AxAkl = pom_core.integral_sum(Ai[c], r.ymin, r.ymax, r.xmin, r.xmax)
-#                    l1_AxAkl = integral_sum(Ai[c][ymin:ymax,xmin:xmax])
-#                    
-#                    lAk0l = lAl[c] - q[k]/(1-q[k])*l1_AxAkl
-#                    lAk1l = lAl[c] +               l1_AxAkl
-#                    
-#                    #lBx1_AxAkl = pom_core.integral_sum(BAi[c], r.ymin, r.ymax, r.xmin, r.xmax)
-#                    lBx1_AxAkl = integral_sum(BAi[c][ymin:ymax, xmin:xmax])
-#                    lBxAk0l = lBxAl[c] - q[k]/(1-q[k])*lBx1_AxAkl
-#                    lBxAk1l = lBxAl[c] +               lBx1_AxAkl
-#                    
-#                    psi0[c][k] = 1/sigma*(lBl[c]-2*lBxAk0l+lAk0l)/lAk0l
-#                    psi1[c][k] = 1/sigma*(lBl[c]-2*lBxAk1l+lAk1l)/lAk1l
-#        '''           
-#        #q_new = np.array(q*step + (1-step)/(1+np.exp(lambd + psi1.sum(0) - psi0.sum(0))), type_t)
-#        
-#        psi1_psi0 = np.minimum(1/sigma*(psi1 - psi0).sum(0), 30)
-#        q_new = np.array(q*step + (1-step)/(1+np.exp(lambd + psi1_psi0)), type_t)
-#        
-#        '''
-#        if np.abs((q_new-q).sum()) < 1e-2:
-#            print("Solved at iteration: ", i)
-#            return q_new
-#        
-#        '''
-#        diff = np.abs((q_new-q)).mean()
-#        if diff  < 1e-6:
-#            n_stab += 1
-#            if n_stab > 5:
-#                print("Solved at iteration: ", i)
-#                return q_new
-#        else:
-#            n_stab = 0        
-#        q = q_new
-#        
-#    print("Solved at max iteration.")     
-#    return q 
+        return qs

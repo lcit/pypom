@@ -23,7 +23,13 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     ==========================================================================================
+    
+Notes:
+
+    const int* : pointer to constant value. The value cannot be changed but the pointer position can
+    int const* : constant pointer to value. The pointer position cannot be changed but the value can   
 */
+#include <iostream>
 #include <boost/python/numpy.hpp>
 #include "core.hpp"
 
@@ -38,9 +44,9 @@ namespace np = boost::python::numpy;
   */ 
 template<typename T>
 inline void CapsuleDestructor(PyObject *ptr){
-    T *tmp = reinterpret_cast<T*>(PyCapsule_GetPointer(ptr, NULL));
+    T *tmp = static_cast<T*>(PyCapsule_GetPointer(ptr, NULL));
     if(tmp){
-        delete tmp;
+        delete[] tmp;
     }
 }
 
@@ -57,19 +63,19 @@ inline np::ndarray make_ndarray(T* const ptr, const int H, const int W=0){
         L = H*W;
     }
 
-    // The object owner is responsible for deleting the dynamic array from the python side
-    // This is the trick to prevent memory leaks! 
-    p::object owner(p::handle<>((PyCapsule_New((void*)ptr, NULL, 
-                                (PyCapsule_Destructor)&CapsuleDestructor<core::scalar_t>))));
+    // We are pasing the ownership of this object to python so that the python desctructor
+    // will be responsible for deleting this array
+    p::object owner(p::handle<>((::PyCapsule_New((void*)(ptr), NULL, 
+                                                 (PyCapsule_Destructor)&CapsuleDestructor<core::scalar_t>))));
 
     // Creates a boost numpy array, this is the actual object we return to python 
-    np::ndarray py_array = np::from_data(ptr, 
+    np::ndarray py_array = np::from_data((void*)(ptr), 
                                          np::dtype::get_builtin<core::scalar_t>(),
                                          p::make_tuple(L),
                                          p::make_tuple(sizeof(core::scalar_t)),
-                                         owner); 
+                                         owner);
 
-    // in the case the returned array is 2D (H,W) instad of a 1D (L,)
+    // reshape the array
     if(H > 0 && W > 0){
         py_array = py_array.reshape(p::make_tuple(H,W));
     }
@@ -131,7 +137,7 @@ np::ndarray sum_rows(np::ndarray py_array){
     const core::scalar_t** array = new const core::scalar_t*[H];
 
     for(int h=0; h<H; ++h){
-	    np::ndarray temp = p::extract<np::ndarray>(py_array[h]);
+        np::ndarray temp = p::extract<np::ndarray>(py_array[h]);
         array[h] = reinterpret_cast<const core::scalar_t*>(temp.get_data());
     }
 
@@ -158,7 +164,7 @@ np::ndarray sum_cols(np::ndarray py_array){
     const core::scalar_t** array = new const core::scalar_t*[H];
 
     for(int h=0; h<H; ++h){
-	    np::ndarray temp = p::extract<np::ndarray>(py_array[h]);
+        np::ndarray temp = p::extract<np::ndarray>(py_array[h]);
         array[h] = reinterpret_cast<const core::scalar_t*>(temp.get_data());
     }
 
@@ -194,9 +200,8 @@ np::ndarray compute_A_(p::tuple view_shape, np::ndarray py_rectangles, np::ndarr
     const core::scalar_t* q = reinterpret_cast<const core::scalar_t*>(py_q.get_data());
 
     core::scalar_t* const A = core::compute_A_(H, W, n_positions, rectangles, q);
-    np::ndarray py_A = make_ndarray(A, H, W);
 
-    return py_A;
+    return make_ndarray(A, H, W);
 }
 
 np::ndarray integral_image(np::ndarray py_image){
@@ -217,9 +222,8 @@ np::ndarray integral_image(np::ndarray py_image){
 
     const core::scalar_t* image = reinterpret_cast<const core::scalar_t*>(py_image.get_data());
     core::scalar_t* const integral = core::integral_image(image, H, W);
-    np::ndarray py_integral = make_ndarray(integral, H, W);
-   
-    return py_integral;
+    
+    return make_ndarray(integral, H, W);
 }
 
 np::ndarray integral_image_mask(np::ndarray py_image, np::ndarray py_mask){
@@ -321,7 +325,7 @@ np::ndarray compute_psi_diff(np::ndarray py_Ai, np::ndarray py_BAi, const core::
 // but with some C++ code. Have a look at the class Solver of the file pom.py
 
 int solve(p::list py_B, np::ndarray py_q, p::list py_rectangles, const core::scalar_t prior, 
-			const core::scalar_t sigma, const core::scalar_t step, const int max_iter, const core::scalar_t tol){
+          const core::scalar_t sigma, const core::scalar_t step, const int max_iter, const core::scalar_t tol){
     /// The full detection algorithm.    
     /// 
     /// Parameters
@@ -361,7 +365,7 @@ int solve(p::list py_B, np::ndarray py_q, p::list py_rectangles, const core::sca
     const int** rectangles = new const int*[n_cams];
 
     for(c=0; c<n_cams; ++c){
-	    np::ndarray temp1 = p::extract<np::ndarray>(py_B[c]);
+        np::ndarray temp1 = p::extract<np::ndarray>(py_B[c]);
         B[c] = reinterpret_cast<const core::scalar_t*>(temp1.get_data());
 
         np::ndarray temp2 = p::extract<np::ndarray>(py_rectangles[c]);
