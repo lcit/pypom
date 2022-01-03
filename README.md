@@ -1,4 +1,6 @@
-# Python version of Probabilistic Occupancy Map (POM)
+# Probabilistic Occupancy Map (POM)
+
+Reimplementation of the Probabilistic Occupancy Map (POM) for multi-view multi-person detection in C with Python wrapper.
 
 F. Fleuret, J. Berclaz, R. Lengagne and P. Fua, Multi-Camera People Tracking with a Probabilistic Occupancy Map, IEEE Transactions on Pattern Analysis and Machine Intelligence, Vol. 30, Nr. 2, pp. 267 - 282, February 2008.
 
